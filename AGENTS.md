@@ -7,11 +7,14 @@
 - Gameplay plugin GUID and assembly name: `com.github.LandmineHQ.PeakPunch`.
 - Tooling mod name: `PeakDummyTools`.
 - Tooling plugin GUID and assembly name: `com.github.LandmineHQ.PeakDummyTools`.
+- Experimental optimization mod name: `PeakPlayerLOD`.
+- Optimization plugin GUID and assembly name: `com.github.LandmineHQ.PeakPlayerLOD`.
 - Target framework: `netstandard2.1`.
 - Main solution: `BuddyClimb.slnx`.
 - Gameplay project: `src/BuddyClimb/BuddyClimb.csproj`.
 - Tooling project: `src/PeakDummyTools/PeakDummyTools.csproj`.
-- The two projects are independent mods. Do not add project references or BepInEx dependencies between them unless the user explicitly changes that boundary.
+- Optimization project: `src/PeakPlayerLOD/PeakPlayerLOD.csproj`.
+- These projects are independent mods. Do not add project references or BepInEx dependencies between them unless the user explicitly changes that boundary.
 - Runtime dependency target is PEAK's BepInExPack, currently `BepInEx-BepInExPack_PEAK` `5.4.75301`.
 
 ## Build And Validation
@@ -21,9 +24,9 @@
 - Use `scripts/build.ps1` for local validation. The script requires `Config.Build.user.props` and relies on its MSBuild properties instead of shell environment variables.
 - Debug validation: `.\scripts\build.ps1`
 - Release packaging validation: `.\scripts\build.ps1 -Configuration Release`
-- Normal solution builds should produce two DLLs: `com.github.LandmineHQ.PeakPunch.dll` and `com.github.LandmineHQ.PeakDummyTools.dll`.
+- Normal solution builds should produce three DLLs: `com.github.LandmineHQ.PeakPunch.dll`, `com.github.LandmineHQ.PeakDummyTools.dll`, and `com.github.LandmineHQ.PeakPlayerLOD.dll`.
 - Pass `-Deploy` only when intentionally copying the built DLL into the local BepInEx directory. The script disables deployment by default even if the local props file enables it.
-- Release package output is under `artifacts/thunderstore/release/`. `BuddyClimb` is Thunderstore-packable; `PeakDummyTools` is a local tooling DLL and is not packed unless its project metadata is intentionally changed.
+- Release package output is under `artifacts/thunderstore/release/`. `BuddyClimb` is Thunderstore-packable; `PeakDummyTools` and `PeakPlayerLOD` are local DLLs and are not packed unless their project metadata is intentionally changed.
 - `artifacts/` is build output and should not be committed.
 - When reading text files from PowerShell, use explicit UTF-8, for example `Get-Content -Encoding UTF8 <path>`.
 - When checking PEAK internals, resolve the PEAK Managed directory from `Config.Build.user.props`, template defaults, or a discovered local Steam library; then inspect `PEAK_Data/Managed/Assembly-CSharp.dll`.
@@ -42,13 +45,15 @@
 - Dummy player spawning is host-only. It creates a marked test `Character` at the local player's center position; the `Character.Awake` patch must temporarily mark this instance as a bot before PEAK's original player registration runs, or the host player's real `Character` can be disabled by `PlayerHandler.RegisterCharacter`.
 - Dummy characters cannot be real Photon room players. Keep their identity isolated with `PeakDummyTools`' synthetic local `Player` mapping, `Character.player` / `Player.character` / `NetworkingUtilities` patches, and UI name handling so they never resolve to the host player.
 - Dummy names are generated through `PeakDummyToolsLocalization` and should remain incrementing and localized. Do not rely on `gameObject.name` alone, because PEAK resets names in `Character.Start`.
+- `PeakPlayerLOD` owns experimental player visual LOD/model optimization. Keep it isolated from BuddyClimb and PeakDummyTools so crashes or visual regressions can be disabled by removing only that DLL.
+- `PeakPlayerLOD` should avoid disabling root `Character`, `PhotonView`, colliders, animation/IK components, or interaction components. Prefer renderer-only experiments plus explicit cleanup that restores renderer state.
 
 ## Compatibility Boundaries
 
 - Keep the plugin GUID stable unless intentionally creating a new incompatible package identity.
 - Keep Thunderstore metadata in MSBuild/ThunderPipe configuration; do not reintroduce the old `thunderstore.toml` workflow.
 - Prefer PEAK's current `Assembly-CSharp.dll` metadata from the resolved local Managed directory when checking API compatibility.
-- Before changing BuddyClimb interaction behavior, verify normal remote player targets. When changing PeakDummyTools, verify spawned dummies still behave like generic non-local player characters.
+- Before changing BuddyClimb interaction behavior, verify normal remote player targets. When changing PeakDummyTools, verify spawned dummies still behave like generic non-local player characters. When changing PeakPlayerLOD, verify original renderers are restored when the feature or plugin is disabled.
 
 ## AGENTS Maintenance
 

@@ -14,5 +14,6 @@
 - Added a `Config.Build.user.props`-based local build script.
 - Isolated dummy player identity from the host player and aligned dummy spawns to the host character center.
 - Made spawned dummies behave like generic non-local player characters for interaction testing.
+- Added `PeakPlayerLOD` as a separate experimental player visual LOD/model optimization mod.
 - Added Space drop input for the carried local player.
 - Kept climbed players conscious instead of marking them as passed out.
