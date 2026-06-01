@@ -6,10 +6,13 @@
 - Rebuilt on the PEAKModding BepInEx template.
 - Added teammate climb interaction for current PEAK builds.
 - Added English and Chinese localization for the climb prompt.
-- Added BepInEx debug config options and a host-only debug player spawn shortcut.
-- Added automatic runtime reload for this mod's BepInEx config file.
-- Fixed debug bot spawning so it no longer replaces or disables the host player's character.
-- Localized debug bot names and made them increment for each spawn.
+- Split host-only dummy player tooling into the independent `PeakDummyTools` mod and DLL.
+- Added BepInEx config options and a host-only dummy player spawn shortcut to `PeakDummyTools`.
+- Added automatic runtime reload for `PeakDummyTools`' BepInEx config file.
+- Fixed dummy spawning so it no longer replaces or disables the host player's character.
+- Localized dummy player names and made them increment for each spawn.
 - Added a `Config.Build.user.props`-based local build script.
-- Isolated debug dummy identity from the host player and aligned debug spawns to the host character center.
-- Fixed debug dummy climb interactions so the local player is carried instead of only being passed out.
+- Isolated dummy player identity from the host player and aligned dummy spawns to the host character center.
+- Made spawned dummies behave like generic non-local player characters for interaction testing.
+- Added Space drop input for the carried local player.
+- Kept climbed players conscious instead of marking them as passed out.

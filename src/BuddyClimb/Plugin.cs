@@ -1,7 +1,6 @@
 using BepInEx;
 using BepInEx.Logging;
-using BuddyClimb.Configuration;
-using BuddyClimb.Debugging;
+using BuddyClimb.Gameplay;
 using HarmonyLib;
 
 namespace BuddyClimb;
@@ -17,8 +16,6 @@ public partial class Plugin : BaseUnityPlugin
     private void Awake()
     {
         Log = Logger;
-        BuddyClimbConfig.Bind(Config);
-        BuddyClimbConfig.EnableHotReload(Config);
 
         new Harmony(Id).PatchAll(typeof(Plugin).Assembly);
 
@@ -27,12 +24,6 @@ public partial class Plugin : BaseUnityPlugin
 
     private void Update()
     {
-        BuddyClimbConfig.ReloadIfChanged();
-        DebugPlayerSpawner.Update();
-    }
-
-    private void OnDestroy()
-    {
-        BuddyClimbConfig.DisableHotReload();
+        CarriedPlayerDropper.Update();
     }
 }

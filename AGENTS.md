@@ -2,12 +2,16 @@
 
 ## Project Overview
 
-- This repository is a PEAK BepInEx mod rebuilt from the PEAKModding BepInEx template.
-- Public mod name: `BuddyClimb`.
-- Plugin GUID and assembly name: `com.github.LandmineHQ.PeakPunch`.
+- This repository contains PEAK BepInEx mods rebuilt from the PEAKModding BepInEx template.
+- Gameplay mod name: `BuddyClimb`.
+- Gameplay plugin GUID and assembly name: `com.github.LandmineHQ.PeakPunch`.
+- Tooling mod name: `PeakDummyTools`.
+- Tooling plugin GUID and assembly name: `com.github.LandmineHQ.PeakDummyTools`.
 - Target framework: `netstandard2.1`.
 - Main solution: `BuddyClimb.slnx`.
-- Main project: `src/BuddyClimb/BuddyClimb.csproj`.
+- Gameplay project: `src/BuddyClimb/BuddyClimb.csproj`.
+- Tooling project: `src/PeakDummyTools/PeakDummyTools.csproj`.
+- The two projects are independent mods. Do not add project references or BepInEx dependencies between them unless the user explicitly changes that boundary.
 - Runtime dependency target is PEAK's BepInExPack, currently `BepInEx-BepInExPack_PEAK` `5.4.75301`.
 
 ## Build And Validation
@@ -17,8 +21,9 @@
 - Use `scripts/build.ps1` for local validation. The script requires `Config.Build.user.props` and relies on its MSBuild properties instead of shell environment variables.
 - Debug validation: `.\scripts\build.ps1`
 - Release packaging validation: `.\scripts\build.ps1 -Configuration Release`
+- Normal solution builds should produce two DLLs: `com.github.LandmineHQ.PeakPunch.dll` and `com.github.LandmineHQ.PeakDummyTools.dll`.
 - Pass `-Deploy` only when intentionally copying the built DLL into the local BepInEx directory. The script disables deployment by default even if the local props file enables it.
-- Release package output is under `artifacts/thunderstore/release/`.
+- Release package output is under `artifacts/thunderstore/release/`. `BuddyClimb` is Thunderstore-packable; `PeakDummyTools` is a local tooling DLL and is not packed unless its project metadata is intentionally changed.
 - `artifacts/` is build output and should not be committed.
 - When reading text files from PowerShell, use explicit UTF-8, for example `Get-Content -Encoding UTF8 <path>`.
 - When checking PEAK internals, resolve the PEAK Managed directory from `Config.Build.user.props`, template defaults, or a discovered local Steam library; then inspect `PEAK_Data/Managed/Assembly-CSharp.dll`.
@@ -30,19 +35,20 @@
 - The primary gameplay hook is `CharacterInteractiblePatch`.
 - The climb prompt must go through `BuddyClimbLocalization`; do not hardcode player-facing prompt text in patches.
 - Current localization supports English plus Simplified/Traditional Chinese, with unsupported languages falling back to English.
-- Debug settings use BepInEx `Config.Bind` in `BuddyClimbConfig`.
-- Runtime config hot reload uses `FileSystemWatcher` to mark the config as dirty, then calls this mod's `Config.Reload()` on Unity's main thread from `Plugin.Update()`. Do not replace this with fixed-interval file polling.
-- Debug player spawning is host-only. It creates a marked test `Character` at the local player's center position; the `Character.Awake` patch must mark this instance as a bot before PEAK's original player registration runs, or the host player's real `Character` can be disabled by `PlayerHandler.RegisterCharacter`.
-- Debug dummy characters cannot be real Photon room players. Keep their identity isolated with BuddyClimb's synthetic local `Player` mapping, `Character.player` / `Player.character` / `NetworkingUtilities` patches, and UI name handling so they never resolve to the host player.
-- Debug bot names are generated through `BuddyClimbLocalization` and should remain incrementing and localized. Do not rely on `gameObject.name` alone, because PEAK resets bot/player names in `Character.Start` and `Character.characterName` hardcodes normal bots as `Bot`.
-- Debug dummy climb interactions must not call the vanilla `RPCA_PassOut` before starting carry. They should send `RPCA_StartCarry` directly from the dummy carrier's `PhotonView`; `CharacterCarryingPatch` owns the temporary pass-out state and applies it together with `isCarried`, `carrier`, and `carriedPlayer`. Do not rely on `CharacterCarrying.StartCarry()` for freshly spawned dummies because PEAK initializes its private `character` field in `Start()`.
+- Carried local players can press Space to request a drop through the carrier's `CharacterCarrying.Drop` RPC; keep this path independent of tooling-only dummy spawning.
+- BuddyClimb climb interactions must not call the vanilla `RPCA_PassOut`; carried players should remain conscious. Send `RPCA_StartCarry` directly from the carrier's `PhotonView`, and let `CharacterCarryingPatch` apply `isCarried`, `carrier`, and `carriedPlayer`. Avoid `CharacterCarrying.StartCarry()` when the direct RPC path is needed because PEAK initializes its private `character` field in `Start()`.
+- `PeakDummyTools` settings use BepInEx `Config.Bind` in `PeakDummyToolsConfig`.
+- `PeakDummyTools` runtime config hot reload uses `FileSystemWatcher` to mark the config as dirty, then calls that mod's `Config.Reload()` on Unity's main thread from `Plugin.Update()`. Do not replace this with fixed-interval file polling.
+- Dummy player spawning is host-only. It creates a marked test `Character` at the local player's center position; the `Character.Awake` patch must temporarily mark this instance as a bot before PEAK's original player registration runs, or the host player's real `Character` can be disabled by `PlayerHandler.RegisterCharacter`.
+- Dummy characters cannot be real Photon room players. Keep their identity isolated with `PeakDummyTools`' synthetic local `Player` mapping, `Character.player` / `Player.character` / `NetworkingUtilities` patches, and UI name handling so they never resolve to the host player.
+- Dummy names are generated through `PeakDummyToolsLocalization` and should remain incrementing and localized. Do not rely on `gameObject.name` alone, because PEAK resets names in `Character.Start`.
 
 ## Compatibility Boundaries
 
 - Keep the plugin GUID stable unless intentionally creating a new incompatible package identity.
 - Keep Thunderstore metadata in MSBuild/ThunderPipe configuration; do not reintroduce the old `thunderstore.toml` workflow.
 - Prefer PEAK's current `Assembly-CSharp.dll` metadata from the resolved local Managed directory when checking API compatibility.
-- Before changing interaction behavior, verify both normal remote player targets and debug-spawned test targets still work.
+- Before changing BuddyClimb interaction behavior, verify normal remote player targets. When changing PeakDummyTools, verify spawned dummies still behave like generic non-local player characters.
 
 ## AGENTS Maintenance
 

@@ -1,6 +1,5 @@
 using HarmonyLib;
 using Photon.Pun;
-using BuddyClimb.Debugging;
 using BuddyClimb.Localization;
 
 namespace BuddyClimb.Patches;
@@ -34,19 +33,10 @@ internal static class CharacterInteractiblePatch
 
         if (CanBeClimbed(__instance.character) && CanClimb(interactor))
         {
-            if (DebugPlayerSpawner.IsDebugSpawnedPlayer(__instance.character))
-            {
-                __instance.character.photonView.RPC(
-                    nameof(CharacterCarrying.RPCA_StartCarry),
-                    RpcTarget.All,
-                    interactor.photonView);
-            }
-            else
-            {
-                Photon.Realtime.Player passOutRpcTarget = GetPassOutRpcTarget(__instance.character);
-                interactor.photonView.RPC("RPCA_PassOut", passOutRpcTarget);
-                __instance.character.refs.carriying.StartCarry(interactor);
-            }
+            __instance.character.photonView.RPC(
+                nameof(CharacterCarrying.RPCA_StartCarry),
+                RpcTarget.All,
+                interactor.photonView);
         }
     }
 
@@ -82,8 +72,12 @@ internal static class CharacterInteractiblePatch
 
     private static bool CanBeClimbed(Character character)
     {
-        bool isDebugSpawnedPlayer = DebugPlayerSpawner.IsDebugSpawnedPlayer(character);
-        if (character.isBot && !isDebugSpawnedPlayer)
+        if (character == null)
+        {
+            return false;
+        }
+
+        if (character.isBot)
         {
             return false;
         }
@@ -98,7 +92,7 @@ internal static class CharacterInteractiblePatch
             return false;
         }
 
-        if (!isDebugSpawnedPlayer && character.player.backpackSlot.hasBackpack)
+        if (character.player.backpackSlot.hasBackpack)
         {
             return false;
         }
@@ -131,18 +125,13 @@ internal static class CharacterInteractiblePatch
         return true;
     }
 
-    private static Photon.Realtime.Player GetPassOutRpcTarget(Character character)
-    {
-        if (DebugPlayerSpawner.IsDebugSpawnedPlayer(character))
-        {
-            return character.photonView.Owner;
-        }
-
-        return character.player.photonView.Owner;
-    }
-
     private static bool CanClimb(Character character)
     {
+        if (character == null)
+        {
+            return false;
+        }
+
         if (character.refs.interactible.CanBeCarried())
         {
             return true;

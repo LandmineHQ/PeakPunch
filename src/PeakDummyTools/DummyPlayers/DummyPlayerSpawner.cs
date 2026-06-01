@@ -1,40 +1,40 @@
 using System.Collections.Generic;
 using System.Reflection;
-using BuddyClimb.Configuration;
-using BuddyClimb.Localization;
 using HarmonyLib;
+using PeakDummyTools.Configuration;
+using PeakDummyTools.Localization;
 using Photon.Pun;
 using UnityEngine;
 
-namespace BuddyClimb.Debugging;
+namespace PeakDummyTools.DummyPlayers;
 
-internal static class DebugPlayerSpawner
+internal static class DummyPlayerSpawner
 {
     private const string CharacterPrefabName = "Character";
-    private const string DebugPlayerInstantiationMarker = "BuddyClimb.DebugPlayer";
+    private const string DummyPlayerInstantiationMarker = "PeakDummyTools.DummyPlayer";
     private const int InstantiationMarkerIndex = 0;
-    private const int InstantiationBotNumberIndex = 1;
+    private const int InstantiationDummyNumberIndex = 1;
 
-    private static readonly HashSet<int> DebugSpawnedViewIds = [];
-    private static readonly Dictionary<int, DebugPlayerRecord> DebugPlayersByCharacterViewId = [];
-    private static readonly Dictionary<Player, int> DebugCharacterViewIdsByPlayer = [];
+    private static readonly HashSet<int> DummySpawnedViewIds = [];
+    private static readonly Dictionary<int, DummyPlayerRecord> DummyPlayersByCharacterViewId = [];
+    private static readonly Dictionary<Player, int> DummyCharacterViewIdsByPlayer = [];
     private static readonly FieldInfo PlayerViewField = AccessTools.Field(typeof(Player), "view");
 
-    private static int nextBotNumber = 1;
+    private static int nextDummyNumber = 1;
     private static bool creatingSyntheticPlayer;
     private static string pendingSyntheticPlayerName = string.Empty;
 
-    private sealed class DebugPlayerRecord
+    private sealed class DummyPlayerRecord
     {
-        internal DebugPlayerRecord(int botNumber, Player player)
+        internal DummyPlayerRecord(int dummyNumber, Player player)
         {
-            BotNumber = botNumber;
+            DummyNumber = dummyNumber;
             Player = player;
-            UserId = $"{DebugPlayerInstantiationMarker}.{botNumber}";
-            ActorNumber = -10_000 - botNumber;
+            UserId = $"{DummyPlayerInstantiationMarker}.{dummyNumber}";
+            ActorNumber = -10_000 - dummyNumber;
         }
 
-        internal int BotNumber { get; }
+        internal int DummyNumber { get; }
 
         internal Player Player { get; }
 
@@ -45,12 +45,12 @@ internal static class DebugPlayerSpawner
 
     internal static void Update()
     {
-        if (!BuddyClimbConfig.EnableDebugFeatures.Value)
+        if (!PeakDummyToolsConfig.EnableDummyTools.Value)
         {
             return;
         }
 
-        if (!BuddyClimbConfig.SpawnPlayerShortcut.Value.IsDown())
+        if (!PeakDummyToolsConfig.SpawnDummyShortcut.Value.IsDown())
         {
             return;
         }
@@ -58,21 +58,21 @@ internal static class DebugPlayerSpawner
         SpawnAtLocalPlayerPosition();
     }
 
-    internal static bool IsDebugSpawnedPlayer(Character character)
+    internal static bool IsDummyPlayer(Character character)
     {
         if (character == null || character.photonView == null)
         {
             return false;
         }
 
-        return DebugSpawnedViewIds.Contains(character.photonView.ViewID)
-            || TryGetDebugBotNumber(character.photonView, out _);
+        return DummySpawnedViewIds.Contains(character.photonView.ViewID)
+            || TryGetDummyNumber(character.photonView, out _);
     }
 
     internal static void PrepareCharacterAwake(Character character)
     {
         PhotonView photonView = character.GetComponent<PhotonView>();
-        if (photonView == null || !TryGetDebugBotNumber(photonView, out _))
+        if (photonView == null || !TryGetDummyNumber(photonView, out _))
         {
             return;
         }
@@ -82,14 +82,21 @@ internal static class DebugPlayerSpawner
 
     internal static void FinalizeCharacterAwake(Character character)
     {
-        if (character == null || character.photonView == null || !TryGetDebugBotNumber(character.photonView, out int botNumber))
+        if (character == null || character.photonView == null || !TryGetDummyNumber(character.photonView, out int dummyNumber))
         {
             return;
         }
 
-        DebugSpawnedViewIds.Add(character.photonView.ViewID);
-        EnsureDebugPlayer(character, botNumber);
-        ApplyDebugName(character, botNumber);
+        DummySpawnedViewIds.Add(character.photonView.ViewID);
+        EnsureDummyPlayer(character, dummyNumber);
+        ApplyDummyName(character, dummyNumber);
+        character.isBot = false;
+        Character.AllBotCharacters.Remove(character);
+        if (!Character.AllCharacters.Contains(character))
+        {
+            Character.AllCharacters.Add(character);
+        }
+
         character.data.dead = false;
         character.data.fullyPassedOut = false;
         character.data.carrier = null;
@@ -98,13 +105,13 @@ internal static class DebugPlayerSpawner
 
     internal static void FinalizeCharacterStart(Character character)
     {
-        if (TryGetDebugBotNumber(character.photonView, out int botNumber))
+        if (TryGetDummyNumber(character.photonView, out int dummyNumber))
         {
-            ApplyDebugName(character, botNumber);
+            ApplyDummyName(character, dummyNumber);
         }
     }
 
-    internal static void RemoveDebugPlayer(Character character)
+    internal static void RemoveDummyPlayer(Character character)
     {
         if (character == null || character.photonView == null)
         {
@@ -112,36 +119,36 @@ internal static class DebugPlayerSpawner
         }
 
         int viewId = character.photonView.ViewID;
-        DebugSpawnedViewIds.Remove(viewId);
-        if (!DebugPlayersByCharacterViewId.TryGetValue(viewId, out DebugPlayerRecord record))
+        DummySpawnedViewIds.Remove(viewId);
+        if (!DummyPlayersByCharacterViewId.TryGetValue(viewId, out DummyPlayerRecord record))
         {
             return;
         }
 
-        DebugPlayersByCharacterViewId.Remove(viewId);
-        DebugCharacterViewIdsByPlayer.Remove(record.Player);
+        DummyPlayersByCharacterViewId.Remove(viewId);
+        DummyCharacterViewIdsByPlayer.Remove(record.Player);
         if (record.Player != null)
         {
             Object.Destroy(record.Player.gameObject);
         }
     }
 
-    internal static bool TryGetDebugPlayer(Character character, out Player player)
+    internal static bool TryGetDummyPlayer(Character character, out Player player)
     {
         player = null!;
-        if (character == null || character.photonView == null || !TryGetDebugBotNumber(character.photonView, out int botNumber))
+        if (character == null || character.photonView == null || !TryGetDummyNumber(character.photonView, out int dummyNumber))
         {
             return false;
         }
 
-        player = EnsureDebugPlayer(character, botNumber);
+        player = EnsureDummyPlayer(character, dummyNumber);
         return player != null;
     }
 
-    internal static bool TryGetDebugCharacter(Player player, out Character character)
+    internal static bool TryGetDummyCharacter(Player player, out Character character)
     {
         character = null!;
-        if (player == null || !DebugCharacterViewIdsByPlayer.TryGetValue(player, out int viewId))
+        if (player == null || !DummyCharacterViewIdsByPlayer.TryGetValue(player, out int viewId))
         {
             return false;
         }
@@ -156,15 +163,15 @@ internal static class DebugPlayerSpawner
         return character != null;
     }
 
-    internal static bool TryGetDebugPlayerUserId(Player player, out string userId)
+    internal static bool TryGetDummyPlayerUserId(Player player, out string userId)
     {
         userId = string.Empty;
-        if (player == null || !DebugCharacterViewIdsByPlayer.TryGetValue(player, out int viewId))
+        if (player == null || !DummyCharacterViewIdsByPlayer.TryGetValue(player, out int viewId))
         {
             return false;
         }
 
-        if (!DebugPlayersByCharacterViewId.TryGetValue(viewId, out DebugPlayerRecord record))
+        if (!DummyPlayersByCharacterViewId.TryGetValue(viewId, out DummyPlayerRecord record))
         {
             return false;
         }
@@ -173,15 +180,15 @@ internal static class DebugPlayerSpawner
         return true;
     }
 
-    internal static bool TryGetDebugPlayerActorNumber(Player player, out int actorNumber)
+    internal static bool TryGetDummyPlayerActorNumber(Player player, out int actorNumber)
     {
         actorNumber = 0;
-        if (player == null || !DebugCharacterViewIdsByPlayer.TryGetValue(player, out int viewId))
+        if (player == null || !DummyCharacterViewIdsByPlayer.TryGetValue(player, out int viewId))
         {
             return false;
         }
 
-        if (!DebugPlayersByCharacterViewId.TryGetValue(viewId, out DebugPlayerRecord record))
+        if (!DummyPlayersByCharacterViewId.TryGetValue(viewId, out DummyPlayerRecord record))
         {
             return false;
         }
@@ -190,15 +197,15 @@ internal static class DebugPlayerSpawner
         return true;
     }
 
-    internal static bool TryGetDebugPlayerName(Character character, out string name)
+    internal static bool TryGetDummyPlayerName(Character character, out string name)
     {
         name = string.Empty;
-        if (character == null || character.photonView == null || !TryGetDebugBotNumber(character.photonView, out int botNumber))
+        if (character == null || character.photonView == null || !TryGetDummyNumber(character.photonView, out int dummyNumber))
         {
             return false;
         }
 
-        name = GetDebugPlayerName(botNumber);
+        name = GetDummyPlayerName(dummyNumber);
         return true;
     }
 
@@ -217,44 +224,44 @@ internal static class DebugPlayerSpawner
     {
         if (!PhotonNetwork.InRoom || !PhotonNetwork.IsMasterClient)
         {
-            Plugin.Log.LogWarning("Debug player spawn is host-only and requires an active Photon room.");
+            Plugin.Log.LogWarning("Dummy player spawn is host-only and requires an active Photon room.");
             return;
         }
 
         Character localCharacter = Character.localCharacter;
         if (localCharacter == null)
         {
-            Plugin.Log.LogWarning("Debug player spawn skipped because no local character exists.");
+            Plugin.Log.LogWarning("Dummy player spawn skipped because no local character exists.");
             return;
         }
 
         PlayerHandler playerHandler = PlayerHandler.Instance;
         if (playerHandler == null)
         {
-            Plugin.Log.LogWarning("Debug player spawn skipped because PlayerHandler is unavailable.");
+            Plugin.Log.LogWarning("Dummy player spawn skipped because PlayerHandler is unavailable.");
             return;
         }
 
         int localActorNumber = PhotonNetwork.LocalPlayer.ActorNumber;
-        int botNumber = nextBotNumber++;
+        int dummyNumber = nextDummyNumber++;
         Vector3 spawnPosition = GetCharacterSpawnPosition(localCharacter);
         Quaternion spawnRotation = localCharacter.transform.rotation;
 
-        object[] instantiationData = [DebugPlayerInstantiationMarker, botNumber];
+        object[] instantiationData = [DummyPlayerInstantiationMarker, dummyNumber];
         GameObject spawnedObject = PhotonNetwork.Instantiate(CharacterPrefabName, spawnPosition, spawnRotation, 0, instantiationData);
         Character spawnedCharacter = spawnedObject.GetComponent<Character>();
         if (spawnedCharacter == null)
         {
-            Plugin.Log.LogWarning("Debug player spawn failed because the spawned object has no Character component.");
+            Plugin.Log.LogWarning("Dummy player spawn failed because the spawned object has no Character component.");
             return;
         }
 
-        ConfigureDebugPlayer(spawnedCharacter, localCharacter, playerHandler, localActorNumber);
+        ConfigureDummyPlayer(spawnedCharacter, localCharacter, playerHandler, localActorNumber);
         spawnedCharacter.photonView.RPC("WarpPlayerRPC", RpcTarget.All, spawnPosition, false);
-        Plugin.Log.LogInfo($"Spawned debug player at {spawnPosition}.");
+        Plugin.Log.LogInfo($"Spawned dummy player at {spawnPosition}.");
     }
 
-    private static void ConfigureDebugPlayer(
+    private static void ConfigureDummyPlayer(
         Character spawnedCharacter,
         Character localCharacter,
         PlayerHandler playerHandler,
@@ -271,21 +278,21 @@ internal static class DebugPlayerSpawner
         }
     }
 
-    private static Player EnsureDebugPlayer(Character character, int botNumber)
+    private static Player EnsureDummyPlayer(Character character, int dummyNumber)
     {
         int viewId = character.photonView.ViewID;
-        if (DebugPlayersByCharacterViewId.TryGetValue(viewId, out DebugPlayerRecord existingRecord) && existingRecord.Player != null)
+        if (DummyPlayersByCharacterViewId.TryGetValue(viewId, out DummyPlayerRecord existingRecord) && existingRecord.Player != null)
         {
             return existingRecord.Player;
         }
 
-        string playerName = GetDebugPlayerName(botNumber);
+        string playerName = GetDummyPlayerName(dummyNumber);
         pendingSyntheticPlayerName = playerName;
         creatingSyntheticPlayer = true;
         Player player;
         try
         {
-            GameObject playerObject = new GameObject($"BuddyClimb Debug Player [{playerName}]");
+            GameObject playerObject = new GameObject($"PeakDummyTools Player [{playerName}]");
             playerObject.AddComponent<PhotonView>();
             player = playerObject.AddComponent<Player>();
         }
@@ -296,9 +303,9 @@ internal static class DebugPlayerSpawner
         }
 
         InitializeSyntheticPlayer(player, playerName);
-        DebugPlayerRecord record = new(botNumber, player);
-        DebugPlayersByCharacterViewId[viewId] = record;
-        DebugCharacterViewIdsByPlayer[player] = viewId;
+        DummyPlayerRecord record = new(dummyNumber, player);
+        DummyPlayersByCharacterViewId[viewId] = record;
+        DummyCharacterViewIdsByPlayer[player] = viewId;
         return player;
     }
 
@@ -314,17 +321,17 @@ internal static class DebugPlayerSpawner
 
         player.tempFullSlot = new TemporaryItemSlot(250);
         player.backpackSlot = new BackpackSlot(3);
-        player.gameObject.name = $"BuddyClimb Debug Player [{playerName}]";
+        player.gameObject.name = $"PeakDummyTools Player [{playerName}]";
     }
 
-    private static void ApplyDebugName(Character character, int botNumber)
+    private static void ApplyDummyName(Character character, int dummyNumber)
     {
-        character.gameObject.name = GetDebugPlayerName(botNumber);
+        character.gameObject.name = GetDummyPlayerName(dummyNumber);
     }
 
-    private static string GetDebugPlayerName(int botNumber)
+    private static string GetDummyPlayerName(int dummyNumber)
     {
-        return BuddyClimbLocalization.Format(BuddyClimbTextKey.DebugBotNameFormat, botNumber);
+        return PeakDummyToolsLocalization.Format(PeakDummyToolsTextKey.DummyPlayerNameFormat, dummyNumber);
     }
 
     private static Vector3 GetCharacterSpawnPosition(Character character)
@@ -339,28 +346,28 @@ internal static class DebugPlayerSpawner
         }
     }
 
-    private static bool TryGetDebugBotNumber(PhotonView? photonView, out int botNumber)
+    private static bool TryGetDummyNumber(PhotonView? photonView, out int dummyNumber)
     {
-        botNumber = 0;
+        dummyNumber = 0;
         if (photonView == null)
         {
             return false;
         }
 
         object[] instantiationData = photonView.InstantiationData;
-        if (instantiationData == null || instantiationData.Length <= InstantiationBotNumberIndex)
+        if (instantiationData == null || instantiationData.Length <= InstantiationDummyNumberIndex)
         {
             return false;
         }
 
-        if (instantiationData[InstantiationMarkerIndex] is not string marker || marker != DebugPlayerInstantiationMarker)
+        if (instantiationData[InstantiationMarkerIndex] is not string marker || marker != DummyPlayerInstantiationMarker)
         {
             return false;
         }
 
-        if (instantiationData[InstantiationBotNumberIndex] is int number)
+        if (instantiationData[InstantiationDummyNumberIndex] is int number)
         {
-            botNumber = number;
+            dummyNumber = number;
             return true;
         }
 

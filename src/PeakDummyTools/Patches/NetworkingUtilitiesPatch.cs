@@ -1,8 +1,8 @@
-using BuddyClimb.Debugging;
 using HarmonyLib;
+using PeakDummyTools.DummyPlayers;
 using Peak.Network;
 
-namespace BuddyClimb.Patches;
+namespace PeakDummyTools.Patches;
 
 [HarmonyPatch(typeof(NetworkingUtilities))]
 internal static class NetworkingUtilitiesPatch
@@ -11,7 +11,7 @@ internal static class NetworkingUtilitiesPatch
     [HarmonyPrefix]
     private static bool GetUserIdPrefix(Player self, ref string __result)
     {
-        if (DebugPlayerSpawner.TryGetDebugPlayerUserId(self, out string userId))
+        if (DummyPlayerSpawner.TryGetDummyPlayerUserId(self, out string userId))
         {
             __result = userId;
             return false;
@@ -24,7 +24,7 @@ internal static class NetworkingUtilitiesPatch
     [HarmonyPrefix]
     private static bool GetActorNumberPrefix(Player self, ref int __result)
     {
-        if (DebugPlayerSpawner.TryGetDebugPlayerActorNumber(self, out int actorNumber))
+        if (DummyPlayerSpawner.TryGetDummyPlayerActorNumber(self, out int actorNumber))
         {
             __result = actorNumber;
             return false;

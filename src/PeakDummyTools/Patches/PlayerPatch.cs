@@ -1,7 +1,7 @@
-using BuddyClimb.Debugging;
 using HarmonyLib;
+using PeakDummyTools.DummyPlayers;
 
-namespace BuddyClimb.Patches;
+namespace PeakDummyTools.Patches;
 
 [HarmonyPatch(typeof(Player))]
 internal static class PlayerPatch
@@ -10,14 +10,14 @@ internal static class PlayerPatch
     [HarmonyPrefix]
     private static bool AwakePrefix(Player __instance)
     {
-        return !DebugPlayerSpawner.TryInitializeSyntheticPlayerAwake(__instance);
+        return !DummyPlayerSpawner.TryInitializeSyntheticPlayerAwake(__instance);
     }
 
     [HarmonyPatch(nameof(Player.character), MethodType.Getter)]
     [HarmonyPrefix]
     private static bool CharacterGetterPrefix(Player __instance, ref Character __result)
     {
-        if (DebugPlayerSpawner.TryGetDebugCharacter(__instance, out Character character))
+        if (DummyPlayerSpawner.TryGetDummyCharacter(__instance, out Character character))
         {
             __result = character;
             return false;

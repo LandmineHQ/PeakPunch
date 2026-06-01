@@ -1,31 +1,34 @@
 using System.Collections.Generic;
-using BuddyClimb.Debugging;
 using HarmonyLib;
 using Photon.Pun;
-using UnityEngine;
 
 namespace BuddyClimb.Patches;
 
 [HarmonyPatch(typeof(CharacterCarrying))]
 internal static class CharacterCarryingPatch
 {
-    private static readonly HashSet<int> TemporarilyPassedOutViewIds = [];
+    private static readonly HashSet<int> BuddyClimbCarriedViewIds = [];
 
-    [HarmonyPatch("FixedUpdate")]
+    [HarmonyPatch("Update")]
     [HarmonyPrefix]
-    private static void FixedUpdatePrefix(CharacterCarrying __instance)
+    private static bool UpdatePrefix(CharacterCarrying __instance)
     {
         Character character = __instance.character ?? __instance.GetComponent<Character>();
         if (character == null
             || character.photonView == null
-            || !character.data.isCarried
-            || character.data.carrier == null
-            || !TemporarilyPassedOutViewIds.Contains(character.photonView.ViewID))
+            || character.data.carriedPlayer == null
+            || !BuddyClimbCarriedViewIds.Contains(character.data.carriedPlayer.photonView.ViewID))
         {
-            return;
+            return true;
         }
 
-        SetTemporaryPassOut(character);
+        if ((character.data.carriedPlayer.data.dead || character.data.fullyPassedOut || character.data.dead)
+            && character.refs.view.IsMine)
+        {
+            __instance.Drop(character.data.carriedPlayer);
+        }
+
+        return false;
     }
 
     [HarmonyPatch(nameof(CharacterCarrying.RPCA_Drop))]
@@ -37,20 +40,7 @@ internal static class CharacterCarryingPatch
             return true;
         }
 
-        bool wasTemporarilyPassedOut = TemporarilyPassedOutViewIds.Remove(targetView.ViewID);
-        if (!targetView.IsMine)
-        {
-            return true;
-        }
-
-        Character character = targetView.GetComponent<Character>();
-        Character? carrier = character?.data.carrier;
-        if (character != null
-            && carrier != null
-            && (wasTemporarilyPassedOut || !character.data.fullyPassedOut))
-        {
-            targetView.RPC("RPCA_UnPassOut", carrier.photonView.Owner);
-        }
+        BuddyClimbCarriedViewIds.Remove(targetView.ViewID);
 
         return true;
     }
@@ -59,13 +49,13 @@ internal static class CharacterCarryingPatch
     [HarmonyPrefix]
     private static bool RPCA_StartCarryPrefix(CharacterCarrying __instance, PhotonView targetView)
     {
-        Character carrierCharacter = __instance.character ?? __instance.GetComponent<Character>();
-        if (!DebugPlayerSpawner.IsDebugSpawnedPlayer(carrierCharacter))
+        if (targetView == null)
         {
-            return true;
+            return false;
         }
 
-        if (targetView == null)
+        Character carrierCharacter = __instance.character ?? __instance.GetComponent<Character>();
+        if (carrierCharacter == null)
         {
             return false;
         }
@@ -76,17 +66,22 @@ internal static class CharacterCarryingPatch
             return false;
         }
 
+        if (carriedCharacter.data.fullyPassedOut || carriedCharacter.data.dead)
+        {
+            return true;
+        }
+
         if (carrierCharacter.data.carriedPlayer != null)
         {
             __instance.Drop(carrierCharacter.data.carriedPlayer);
             return false;
         }
 
-        SetTemporaryPassOut(carriedCharacter);
         carriedCharacter.refs.carriying.ToggleCarryPhysics(true);
         carriedCharacter.data.isCarried = true;
         carrierCharacter.data.carriedPlayer = carriedCharacter;
         carriedCharacter.data.carrier = carrierCharacter;
+        BuddyClimbCarriedViewIds.Add(carriedCharacter.photonView.ViewID);
 
         foreach (Character playerCharacter in PlayerHandler.GetAllPlayerCharacters())
         {
@@ -94,14 +89,5 @@ internal static class CharacterCarryingPatch
         }
 
         return false;
-    }
-
-    private static void SetTemporaryPassOut(Character character)
-    {
-        TemporarilyPassedOutViewIds.Add(character.photonView.ViewID);
-        character.data.passedOut = true;
-        character.data.fullyPassedOut = true;
-        character.data.passOutValue = 1f;
-        character.data.lastPassedOut = Time.time;
     }
 }

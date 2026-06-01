@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/BuddyClimb/BuddyClimb.csproj" />
+    <Project Path="src/PeakDummyTools/PeakDummyTools.csproj" />
   </Folder>
 </Solution>

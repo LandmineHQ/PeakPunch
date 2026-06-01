@@ -3,9 +3,9 @@ using System.IO;
 using BepInEx.Configuration;
 using UnityEngine;
 
-namespace BuddyClimb.Configuration;
+namespace PeakDummyTools.Configuration;
 
-internal static class BuddyClimbConfig
+internal static class PeakDummyToolsConfig
 {
     private const float HotReloadDebounceSeconds = 0.25f;
 
@@ -17,23 +17,23 @@ internal static class BuddyClimbConfig
     private static bool reloadScheduled;
     private static float reloadAfterTime;
 
-    internal static ConfigEntry<bool> EnableDebugFeatures { get; private set; } = null!;
+    internal static ConfigEntry<bool> EnableDummyTools { get; private set; } = null!;
 
-    internal static ConfigEntry<KeyboardShortcut> SpawnPlayerShortcut { get; private set; } = null!;
+    internal static ConfigEntry<KeyboardShortcut> SpawnDummyShortcut { get; private set; } = null!;
 
     internal static void Bind(ConfigFile config)
     {
-        EnableDebugFeatures = config.Bind(
-            "Debug",
-            "EnableDebugFeatures",
+        EnableDummyTools = config.Bind(
+            "Dummy Spawner",
+            "EnableDummyTools",
             false,
-            "Enable debug-only BuddyClimb features. Keep this disabled during normal gameplay.");
+            "Enable PEAK dummy-player tools. Keep this disabled during normal gameplay.");
 
-        SpawnPlayerShortcut = config.Bind(
-            "Debug",
-            "SpawnPlayerShortcut",
+        SpawnDummyShortcut = config.Bind(
+            "Dummy Spawner",
+            "SpawnDummyShortcut",
             new KeyboardShortcut(KeyCode.G, KeyCode.LeftAlt),
-            "When debug features are enabled, host can press this shortcut to spawn a default test player at the local player's position.");
+            "When dummy tools are enabled, host can press this shortcut to spawn a dummy player at the local player's position.");
     }
 
     internal static void EnableHotReload(ConfigFile config)
@@ -98,11 +98,11 @@ internal static class BuddyClimbConfig
         try
         {
             currentConfig.Reload();
-            Plugin.Log.LogInfo("Reloaded BuddyClimb config from disk.");
+            Plugin.Log.LogInfo("Reloaded PeakDummyTools config from disk.");
         }
         catch (Exception ex)
         {
-            Plugin.Log.LogWarning($"Failed to reload BuddyClimb config: {ex.Message}");
+            Plugin.Log.LogWarning($"Failed to reload PeakDummyTools config: {ex.Message}");
         }
     }
 

@@ -1,8 +1,8 @@
-using BuddyClimb.Debugging;
 using HarmonyLib;
+using PeakDummyTools.DummyPlayers;
 using UnityEngine;
 
-namespace BuddyClimb.Patches;
+namespace PeakDummyTools.Patches;
 
 [HarmonyPatch(typeof(UIPlayerNames))]
 internal static class UIPlayerNamesPatch
@@ -23,7 +23,7 @@ internal static class UIPlayerNamesPatch
 
         PlayerName playerName = __instance.playerNameText[index];
         Character? character = playerName.characterInteractable?.character;
-        if (character == null || !DebugPlayerSpawner.TryGetDebugPlayerName(character, out string debugName))
+        if (character == null || !DummyPlayerSpawner.TryGetDummyPlayerName(character, out string dummyName))
         {
             return true;
         }
@@ -33,7 +33,7 @@ internal static class UIPlayerNamesPatch
             return false;
         }
 
-        playerName.text.text = debugName;
+        playerName.text.text = dummyName;
         playerName.transform.position = MainCamera.instance.cam.WorldToScreenPoint(position);
         if (visible)
         {
