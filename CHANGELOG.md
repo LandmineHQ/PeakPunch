@@ -1,5 +1,7 @@
-# InitVersion
+# Changelog
 
-Use [E] to Climb your teammates.
+## 0.1.0
 
-If you feel that climbing is too tiring, why not ask your teammates to do it for you?
+- Forked PeakPunch as BuddyClimb.
+- Rebuilt on the PEAKModding BepInEx template.
+- Added teammate climb interaction for current PEAK builds.

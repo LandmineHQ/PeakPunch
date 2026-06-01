@@ -1,6 +1,5 @@
-# PeakPunch
+# BuddyClimb
 
-Use [E] to Climb your teammates.
+Use `E` to climb on your teammates in PEAK.
 
-If you feel that climbing is too tiring, why not ask your teammates to do it for you? Conquer your teammates before you conquer the mountain!!
-
+If climbing feels too tiring, let a teammate carry you up the mountain before you conquer it yourself.
