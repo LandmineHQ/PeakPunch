@@ -35,6 +35,7 @@
 - Debug player spawning is host-only. It creates a marked test `Character` at the local player's center position; the `Character.Awake` patch must mark this instance as a bot before PEAK's original player registration runs, or the host player's real `Character` can be disabled by `PlayerHandler.RegisterCharacter`.
 - Debug dummy characters cannot be real Photon room players. Keep their identity isolated with BuddyClimb's synthetic local `Player` mapping, `Character.player` / `Player.character` / `NetworkingUtilities` patches, and UI name handling so they never resolve to the host player.
 - Debug bot names are generated through `BuddyClimbLocalization` and should remain incrementing and localized. Do not rely on `gameObject.name` alone, because PEAK resets bot/player names in `Character.Start` and `Character.characterName` hardcodes normal bots as `Bot`.
+- Debug dummy climb interactions must not call the vanilla `RPCA_PassOut` before starting carry. They should send `RPCA_StartCarry` directly from the dummy carrier's `PhotonView`; `CharacterCarryingPatch` owns the temporary pass-out state and applies it together with `isCarried`, `carrier`, and `carriedPlayer`. Do not rely on `CharacterCarrying.StartCarry()` for freshly spawned dummies because PEAK initializes its private `character` field in `Start()`.
 
 ## Compatibility Boundaries
 

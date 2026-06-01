@@ -12,3 +12,4 @@
 - Localized debug bot names and made them increment for each spawn.
 - Added a `Config.Build.user.props`-based local build script.
 - Isolated debug dummy identity from the host player and aligned debug spawns to the host character center.
+- Fixed debug dummy climb interactions so the local player is carried instead of only being passed out.
