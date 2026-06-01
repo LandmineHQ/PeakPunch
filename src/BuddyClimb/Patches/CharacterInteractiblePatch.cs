@@ -89,6 +89,40 @@ internal static class CharacterInteractiblePatch
         return true;
     }
 
+    [HarmonyPatch(typeof(CharacterCarrying), nameof(CharacterCarrying.RPCA_StartCarry))]
+    [HarmonyPrefix]
+    private static bool RPCA_StartCarryPrefix(CharacterCarrying __instance, PhotonView targetView)
+    {
+        if (!DebugPlayerSpawner.IsDebugSpawnedPlayer(__instance.character))
+        {
+            return true;
+        }
+
+        Character carriedCharacter = targetView.GetComponent<Character>();
+        if (carriedCharacter == null)
+        {
+            return false;
+        }
+
+        if (__instance.character.data.carriedPlayer != null)
+        {
+            __instance.Drop(__instance.character.data.carriedPlayer);
+            return false;
+        }
+
+        carriedCharacter.refs.carriying.ToggleCarryPhysics(true);
+        carriedCharacter.data.isCarried = true;
+        __instance.character.data.carriedPlayer = carriedCharacter;
+        carriedCharacter.data.carrier = __instance.character;
+
+        foreach (Character playerCharacter in PlayerHandler.GetAllPlayerCharacters())
+        {
+            playerCharacter.refs.afflictions.UpdateWeight();
+        }
+
+        return false;
+    }
+
     private static bool CanBeClimbed(Character character)
     {
         bool isDebugSpawnedPlayer = DebugPlayerSpawner.IsDebugSpawnedPlayer(character);
