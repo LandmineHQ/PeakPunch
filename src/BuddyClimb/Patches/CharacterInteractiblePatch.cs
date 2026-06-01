@@ -1,5 +1,7 @@
 using HarmonyLib;
 using Photon.Pun;
+using BuddyClimb.Debugging;
+using BuddyClimb.Localization;
 
 namespace BuddyClimb.Patches;
 
@@ -17,7 +19,7 @@ internal static class CharacterInteractiblePatch
 
         if (CanBeClimbed(__instance.character))
         {
-            __result = "爬上去!";
+            __result = BuddyClimbLocalization.Get(BuddyClimbTextKey.ClimbOnTeammate);
         }
     }
 
@@ -32,8 +34,24 @@ internal static class CharacterInteractiblePatch
 
         if (CanBeClimbed(__instance.character) && CanClimb(interactor))
         {
-            interactor.photonView.RPC("RPCA_PassOut", __instance.character.player.photonView.Owner);
+            Photon.Realtime.Player passOutRpcTarget = GetPassOutRpcTarget(__instance.character);
+            interactor.photonView.RPC("RPCA_PassOut", passOutRpcTarget);
             __instance.character.refs.carriying.StartCarry(interactor);
+        }
+    }
+
+    [HarmonyPatch(nameof(CharacterInteractible.IsInteractible))]
+    [HarmonyPostfix]
+    private static void IsInteractiblePatch(CharacterInteractible __instance, ref bool __result, ref Character interactor)
+    {
+        if (__result)
+        {
+            return;
+        }
+
+        if (CanBeClimbed(__instance.character) && CanClimb(interactor))
+        {
+            __result = true;
         }
     }
 
@@ -73,6 +91,12 @@ internal static class CharacterInteractiblePatch
 
     private static bool CanBeClimbed(Character character)
     {
+        bool isDebugSpawnedPlayer = DebugPlayerSpawner.IsDebugSpawnedPlayer(character);
+        if (character.isBot && !isDebugSpawnedPlayer)
+        {
+            return false;
+        }
+
         if (character.IsLocal)
         {
             return false;
@@ -83,7 +107,7 @@ internal static class CharacterInteractiblePatch
             return false;
         }
 
-        if (character.player.backpackSlot.hasBackpack)
+        if (!isDebugSpawnedPlayer && character.player.backpackSlot.hasBackpack)
         {
             return false;
         }
@@ -114,6 +138,16 @@ internal static class CharacterInteractiblePatch
         }
 
         return true;
+    }
+
+    private static Photon.Realtime.Player GetPassOutRpcTarget(Character character)
+    {
+        if (DebugPlayerSpawner.IsDebugSpawnedPlayer(character))
+        {
+            return character.photonView.Owner;
+        }
+
+        return character.player.photonView.Owner;
     }
 
     private static bool CanClimb(Character character)
