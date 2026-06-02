@@ -54,6 +54,8 @@
 - Dummy control switching should show its own `Alt + T` interaction prompt row from the UI layer. Do not append this text through `CharacterInteractible.GetInteractionText`, because that reuses PEAK's normal `E` interaction slot.
 - `PeakPlayerLOD` owns experimental player visual LOD/model optimization. Keep it isolated from BuddyClimb and PeakDummyTools so crashes or visual regressions can be disabled by removing only that DLL.
 - `PeakPlayerLOD` should avoid disabling root `Character`, `PhotonView`, colliders, animation/IK components, or interaction components. Prefer renderer-only experiments plus explicit cleanup that restores renderer state.
+- `PeakPlayerLOD` keeps the nearest configured non-local players on their original renderers and represents farther non-local players with a skin-only renderer proxy on the original character: keep the base skin/body and face expression renderers, hide clothing, hats, accessories, shadows, chicken, skeleton, and other cosmetic renderers. Do not create separate mesh proxy objects for this mode.
+- `PeakPlayerLOD` LOD transitions use `PlayerVisualLodSwitchDebounceSeconds` so players near the full-detail boundary do not rapidly toggle renderer states.
 
 ## Compatibility Boundaries
 

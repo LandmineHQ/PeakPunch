@@ -21,9 +21,9 @@ internal static class PeakPlayerLodConfig
 
     internal static ConfigEntry<int> MaxFullDetailRemotePlayers { get; private set; } = null!;
 
-    internal static ConfigEntry<bool> ShowLowDetailPlayerProxy { get; private set; } = null!;
-
     internal static ConfigEntry<float> PlayerVisualLodRefreshInterval { get; private set; } = null!;
+
+    internal static ConfigEntry<float> PlayerVisualLodSwitchDebounceSeconds { get; private set; } = null!;
 
     internal static ConfigEntry<bool> LogPlayerVisualLodChanges { get; private set; } = null!;
 
@@ -41,17 +41,17 @@ internal static class PeakPlayerLodConfig
             3,
             "Keep this many nearest non-local player characters using their original renderers. The local player is always kept full detail.");
 
-        ShowLowDetailPlayerProxy = config.Bind(
-            "Player Visual LOD",
-            "ShowLowDetailPlayerProxy",
-            true,
-            "Show a simple capsule proxy for non-local player characters outside the full-detail set.");
-
         PlayerVisualLodRefreshInterval = config.Bind(
             "Player Visual LOD",
             "PlayerVisualLodRefreshInterval",
             0.5f,
             "Seconds between player visual LOD refreshes. Lower values react faster but cost more CPU.");
+
+        PlayerVisualLodSwitchDebounceSeconds = config.Bind(
+            "Player Visual LOD",
+            "PlayerVisualLodSwitchDebounceSeconds",
+            1f,
+            "Seconds a player's requested LOD state must remain stable before switching renderers. This prevents rapid toggling near the full-detail boundary.");
 
         LogPlayerVisualLodChanges = config.Bind(
             "Player Visual LOD",

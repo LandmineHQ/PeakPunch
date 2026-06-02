@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.Linq;
 using PeakPlayerLOD.Configuration;
 using UnityEngine;
-using UnityEngine.Rendering;
 
 namespace PeakPlayerLOD.VisualLod;
 
@@ -16,7 +15,6 @@ internal static class PlayerVisualLodManager
     private static readonly HashSet<int> FullDetailPlayerIds = [];
     private static readonly List<int> StalePlayerIds = [];
 
-    private static Material? proxyMaterial;
     private static float nextRefreshTime;
 
     internal static void Update()
@@ -47,13 +45,7 @@ internal static class PlayerVisualLodManager
 
     internal static void Cleanup()
     {
-        RestoreAll(destroyProxies: true);
-
-        if (proxyMaterial != null)
-        {
-            Object.Destroy(proxyMaterial);
-            proxyMaterial = null;
-        }
+        RestoreAll(clearStates: true);
     }
 
     private static void RefreshPlayerStates(Character localCharacter)
@@ -65,7 +57,7 @@ internal static class PlayerVisualLodManager
         int localId = localCharacter.GetInstanceID();
         ActivePlayerIds.Add(localId);
         FullDetailPlayerIds.Add(localId);
-        EnsureState(localCharacter).ApplyFullDetail();
+        EnsureState(localCharacter).ApplyFullDetailImmediate();
 
         Vector3 localPosition = GetCharacterPosition(localCharacter);
         foreach (Character character in Character.AllCharacters)
@@ -90,17 +82,16 @@ internal static class PlayerVisualLodManager
             FullDetailPlayerIds.Add(RemotePlayers[index].PlayerId);
         }
 
-        bool showProxy = PeakPlayerLodConfig.ShowLowDetailPlayerProxy.Value;
         foreach (CharacterDistance remotePlayer in RemotePlayers)
         {
             PlayerVisualState state = EnsureState(remotePlayer.Character);
             if (FullDetailPlayerIds.Contains(remotePlayer.PlayerId))
             {
-                state.ApplyFullDetail();
+                state.RequestFullDetail();
             }
             else
             {
-                state.ApplyLowDetail(showProxy);
+                state.RequestLowDetail();
             }
         }
 
@@ -134,20 +125,20 @@ internal static class PlayerVisualLodManager
         {
             if (PlayerStates.TryGetValue(playerId, out PlayerVisualState state))
             {
-                state.Restore(destroyProxy: true);
+                state.Restore();
                 PlayerStates.Remove(playerId);
             }
         }
     }
 
-    private static void RestoreAll(bool destroyProxies = false)
+    private static void RestoreAll(bool clearStates = false)
     {
         foreach (PlayerVisualState state in PlayerStates.Values)
         {
-            state.Restore(destroyProxies);
+            state.Restore();
         }
 
-        if (destroyProxies)
+        if (clearStates)
         {
             PlayerStates.Clear();
         }
@@ -163,23 +154,6 @@ internal static class PlayerVisualLodManager
         {
             return character.transform.position;
         }
-    }
-
-    private static Material GetProxyMaterial()
-    {
-        if (proxyMaterial != null)
-        {
-            return proxyMaterial;
-        }
-
-        Shader shader = Shader.Find("Standard") ?? Shader.Find("Diffuse");
-        proxyMaterial = new Material(shader)
-        {
-            name = "PeakPlayerLOD Proxy",
-            color = new Color(0.2f, 0.9f, 1f, 1f),
-        };
-
-        return proxyMaterial;
     }
 
     private readonly struct CharacterDistance
@@ -204,8 +178,11 @@ internal static class PlayerVisualLodManager
         private readonly Dictionary<Renderer, bool> originalRendererStates = [];
         private readonly List<Renderer> staleRenderers = [];
 
-        private GameObject? proxy;
         private bool isLowDetail;
+        private bool hasAppliedLodState;
+        private bool hasPendingLodState;
+        private bool pendingLowDetail;
+        private float pendingSwitchTime;
 
         internal PlayerVisualState(Character character)
         {
@@ -214,10 +191,68 @@ internal static class PlayerVisualLodManager
 
         internal bool IsInvalid => character == null;
 
-        internal void ApplyFullDetail()
+        internal void ApplyFullDetailImmediate()
+        {
+            ClearPendingLodSwitch();
+            ApplyLod(lowDetail: false);
+        }
+
+        internal void RequestFullDetail()
+        {
+            RequestLod(lowDetail: false);
+        }
+
+        internal void RequestLowDetail()
+        {
+            RequestLod(lowDetail: true);
+        }
+
+        internal void Restore()
+        {
+            ClearPendingLodSwitch();
+            ApplyLod(lowDetail: false);
+        }
+
+        private void RequestLod(bool lowDetail)
+        {
+            if (!hasAppliedLodState)
+            {
+                ApplyLod(lowDetail);
+                return;
+            }
+
+            if (isLowDetail == lowDetail)
+            {
+                ClearPendingLodSwitch();
+                return;
+            }
+
+            float debounceSeconds = Mathf.Max(0f, PeakPlayerLodConfig.PlayerVisualLodSwitchDebounceSeconds.Value);
+            if (debounceSeconds <= 0f)
+            {
+                ApplyLod(lowDetail);
+                return;
+            }
+
+            if (!hasPendingLodState || pendingLowDetail != lowDetail)
+            {
+                hasPendingLodState = true;
+                pendingLowDetail = lowDetail;
+                pendingSwitchTime = Time.unscaledTime + debounceSeconds;
+                return;
+            }
+
+            if (Time.unscaledTime >= pendingSwitchTime)
+            {
+                ClearPendingLodSwitch();
+                ApplyLod(lowDetail);
+            }
+        }
+
+        private void ApplyLod(bool lowDetail)
         {
             RefreshOriginalRenderers();
-            LogTransitionIfNeeded(lowDetail: false);
+
             staleRenderers.Clear();
             foreach (KeyValuePair<Renderer, bool> rendererState in originalRendererStates.ToArray())
             {
@@ -228,59 +263,38 @@ internal static class PlayerVisualLodManager
                     continue;
                 }
 
-                renderer.enabled = rendererState.Value;
+                renderer.enabled = rendererState.Value && (!lowDetail || IsLowDetailRenderer(renderer));
             }
 
             RemoveStaleRenderers();
-            SetProxyActive(false);
+            LogTransitionIfNeeded(lowDetail);
+            isLowDetail = lowDetail;
+            hasAppliedLodState = true;
         }
 
-        internal void ApplyLowDetail(bool showProxy)
+        private void ClearPendingLodSwitch()
         {
-            RefreshOriginalRenderers();
-            LogTransitionIfNeeded(lowDetail: true);
-            staleRenderers.Clear();
-            foreach (Renderer renderer in originalRendererStates.Keys.ToArray())
-            {
-                if (renderer == null)
-                {
-                    staleRenderers.Add(renderer!);
-                    continue;
-                }
-
-                renderer.enabled = false;
-            }
-
-            RemoveStaleRenderers();
-            SetProxyActive(showProxy);
-        }
-
-        internal void Restore(bool destroyProxy)
-        {
-            ApplyFullDetail();
-            if (destroyProxy && proxy != null)
-            {
-                Object.Destroy(proxy);
-                proxy = null;
-            }
+            hasPendingLodState = false;
+            pendingLowDetail = false;
+            pendingSwitchTime = 0f;
         }
 
         private void LogTransitionIfNeeded(bool lowDetail)
         {
-            if (isLowDetail == lowDetail)
+            if (hasAppliedLodState && isLowDetail == lowDetail)
             {
                 return;
             }
 
-            isLowDetail = lowDetail;
             if (!PeakPlayerLodConfig.LogPlayerVisualLodChanges.Value)
             {
                 return;
             }
 
             string targetState = lowDetail ? "low detail" : "full detail";
+            string detailText = lowDetail ? $"; skinProxyRenderers={CountLowDetailRenderers()}" : string.Empty;
             Plugin.Log.LogInfo(
-                $"Player visual LOD set {character.characterName} to {targetState}; renderers={originalRendererStates.Count}.");
+                $"Player visual LOD set {character.characterName} to {targetState}; renderers={originalRendererStates.Count}{detailText}.");
         }
 
         private void RefreshOriginalRenderers()
@@ -342,7 +356,7 @@ internal static class PlayerVisualLodManager
 
         private void AddRenderer(Renderer? renderer)
         {
-            if (renderer == null || IsProxyRenderer(renderer) || originalRendererStates.ContainsKey(renderer))
+            if (renderer == null || originalRendererStates.ContainsKey(renderer))
             {
                 return;
             }
@@ -360,70 +374,73 @@ internal static class PlayerVisualLodManager
             staleRenderers.Clear();
         }
 
-        private bool IsProxyRenderer(Renderer renderer)
+        private int CountLowDetailRenderers()
         {
-            return proxy != null && renderer.transform.IsChildOf(proxy.transform);
-        }
-
-        private void SetProxyActive(bool active)
-        {
-            if (!active)
+            int count = 0;
+            foreach (KeyValuePair<Renderer, bool> rendererState in originalRendererStates)
             {
-                if (proxy != null)
+                Renderer renderer = rendererState.Key;
+                if (rendererState.Value && renderer != null && IsLowDetailRenderer(renderer))
                 {
-                    proxy.SetActive(false);
+                    count++;
                 }
-
-                return;
             }
 
-            EnsureProxy();
-            if (proxy != null)
-            {
-                UpdateProxyTransform();
-                proxy.SetActive(true);
-            }
+            return count;
         }
 
-        private void EnsureProxy()
+        private bool IsLowDetailRenderer(Renderer renderer)
         {
-            if (proxy != null || character == null)
+            CharacterCustomization customization = character.refs.customization;
+            if (customization == null || customization.refs == null)
             {
-                return;
+                return renderer == character.refs.mainRenderer;
             }
 
-            proxy = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            proxy.name = "PeakPlayerLOD Proxy";
-            proxy.layer = character.gameObject.layer;
-            proxy.SetActive(false);
-            UpdateProxyTransform();
-
-            Collider collider = proxy.GetComponent<Collider>();
-            if (collider != null)
+            if (IsCosmeticRenderer(renderer, customization))
             {
-                Object.Destroy(collider);
+                return false;
             }
 
-            Renderer renderer = proxy.GetComponent<Renderer>();
-            if (renderer != null)
-            {
-                renderer.sharedMaterial = GetProxyMaterial();
-                renderer.shadowCastingMode = ShadowCastingMode.Off;
-                renderer.receiveShadows = false;
-            }
+            return renderer == character.refs.mainRenderer
+                || renderer == customization.refs.mainRenderer
+                || renderer == customization.refs.mouthRenderer
+                || ContainsRenderer(customization.refs.PlayerRenderers, renderer)
+                || ContainsRenderer(customization.refs.EyeRenderers, renderer);
         }
 
-        private void UpdateProxyTransform()
+        private static bool IsCosmeticRenderer(Renderer renderer, CharacterCustomization customization)
         {
-            if (proxy == null || character == null)
+            return renderer == customization.refs.mainRendererShadow
+                || renderer == customization.refs.accessoryRenderer
+                || renderer == customization.refs.shorts
+                || renderer == customization.refs.skirt
+                || renderer == customization.refs.skirtShadow
+                || renderer == customization.refs.shortsShadow
+                || renderer == customization.refs.sashRenderer
+                || renderer == customization.refs.blindRenderer
+                || renderer == customization.refs.chickenRenderer
+                || renderer == customization.refs.headShadow
+                || renderer == customization.refs.skeletonRenderer
+                || ContainsRenderer(customization.refs.playerHats, renderer);
+        }
+
+        private static bool ContainsRenderer(Renderer[]? renderers, Renderer renderer)
+        {
+            if (renderers == null)
             {
-                return;
+                return false;
             }
 
-            proxy.transform.SetParent(null, worldPositionStays: true);
-            proxy.transform.position = GetCharacterPosition(character) + new Vector3(0f, 0.35f, 0f);
-            proxy.transform.rotation = Quaternion.identity;
-            proxy.transform.localScale = new Vector3(0.5f, 0.9f, 0.5f);
+            foreach (Renderer candidate in renderers)
+            {
+                if (candidate == renderer)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }
