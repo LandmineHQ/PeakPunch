@@ -31,6 +31,7 @@ public sealed class Plugin : BaseUnityPlugin
     {
         PeakDummyToolsConfig.ReloadIfChanged();
         DummyPlayerSpawner.Update();
+        DummyControlSwitcher.Update();
     }
 
     private void OnDestroy()

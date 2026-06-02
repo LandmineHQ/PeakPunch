@@ -5,6 +5,8 @@ namespace PeakDummyTools.Localization;
 internal enum PeakDummyToolsTextKey
 {
     DummyPlayerNameFormat,
+    SwitchControlToDummy,
+    SwitchControlToHost,
 }
 
 internal static class PeakDummyToolsLocalization
@@ -19,12 +21,16 @@ internal static class PeakDummyToolsLocalization
         new Dictionary<PeakDummyToolsTextKey, string>
         {
             [PeakDummyToolsTextKey.DummyPlayerNameFormat] = "dummy{0}",
+            [PeakDummyToolsTextKey.SwitchControlToDummy] = "Switch control",
+            [PeakDummyToolsTextKey.SwitchControlToHost] = "Return control",
         };
 
     private static readonly IReadOnlyDictionary<PeakDummyToolsTextKey, string> ChineseText =
         new Dictionary<PeakDummyToolsTextKey, string>
         {
             [PeakDummyToolsTextKey.DummyPlayerNameFormat] = "假人{0}",
+            [PeakDummyToolsTextKey.SwitchControlToDummy] = "切换操控",
+            [PeakDummyToolsTextKey.SwitchControlToHost] = "切回本体",
         };
 
     internal static string Format(PeakDummyToolsTextKey key, params object[] args)
@@ -32,7 +38,7 @@ internal static class PeakDummyToolsLocalization
         return string.Format(Get(key), args);
     }
 
-    private static string Get(PeakDummyToolsTextKey key)
+    internal static string Get(PeakDummyToolsTextKey key)
     {
         IReadOnlyDictionary<PeakDummyToolsTextKey, string> currentText = GetCurrentLanguage() switch
         {

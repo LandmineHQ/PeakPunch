@@ -31,6 +31,7 @@ internal static class CharacterPatch
     [HarmonyPostfix]
     private static void OnDestroyPostfix(Character __instance)
     {
+        DummyControlSwitcher.HandleCharacterRemoved(__instance);
         DummyPlayerSpawner.RemoveDummyPlayer(__instance);
     }
 

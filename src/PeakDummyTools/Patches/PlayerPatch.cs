@@ -23,6 +23,12 @@ internal static class PlayerPatch
             return false;
         }
 
+        if (DummyControlSwitcher.TryGetControlledCharacterForLocalPlayer(__instance, out character))
+        {
+            __result = character;
+            return false;
+        }
+
         return true;
     }
 }

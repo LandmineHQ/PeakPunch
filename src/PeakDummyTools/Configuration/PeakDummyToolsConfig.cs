@@ -21,6 +21,8 @@ internal static class PeakDummyToolsConfig
 
     internal static ConfigEntry<KeyboardShortcut> SpawnDummyShortcut { get; private set; } = null!;
 
+    internal static ConfigEntry<KeyboardShortcut> SwitchControlShortcut { get; private set; } = null!;
+
     internal static void Bind(ConfigFile config)
     {
         EnableDummyTools = config.Bind(
@@ -34,6 +36,12 @@ internal static class PeakDummyToolsConfig
             "SpawnDummyShortcut",
             new KeyboardShortcut(KeyCode.G, KeyCode.LeftAlt),
             "When dummy tools are enabled, host can press this shortcut to spawn a dummy player at the local player's position.");
+
+        SwitchControlShortcut = config.Bind(
+            "Dummy Control",
+            "SwitchControlShortcut",
+            new KeyboardShortcut(KeyCode.T, KeyCode.LeftAlt),
+            "When dummy tools are enabled, host can press this shortcut while targeting a dummy player to control it. Press again with no dummy target to return to the host character.");
     }
 
     internal static void EnableHotReload(ConfigFile config)
