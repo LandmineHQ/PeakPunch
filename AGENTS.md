@@ -36,10 +36,14 @@
 
 - Harmony comes from the template's NuGet dependency (`HarmonyX` `2.9.0`). Do not copy Harmony assemblies from old build outputs, and do not upgrade HarmonyX unless there is a concrete compatibility reason.
 - The primary gameplay hook is `CharacterInteractiblePatch`.
+- `BuddyClimbConfig` owns gameplay config entries. `EnableBackpackTransfer` defaults to false; when false, carrier backpacks still block BuddyClimb interactions.
+- `BuddyClimbConfig` runtime config hot reload uses `FileSystemWatcher` to mark the config as dirty, then calls this mod's `Config.Reload()` on Unity's main thread from `Plugin.Update()`. Do not replace this with fixed-interval file polling.
 - The climb prompt must go through `BuddyClimbLocalization`; do not hardcode player-facing prompt text in patches.
+- Use a distinct `BuddyClimbTextKey` for each full prompt. Do not build player-facing prompt variants by concatenating localized fragments.
 - Current localization supports English plus Simplified/Traditional Chinese, with unsupported languages falling back to English.
 - Conscious local players carried through BuddyClimb can press Space to request a drop through the carrier's `CharacterCarrying.Drop` RPC. This Space handling must consume/suppress the same-frame jump input and must not activate for vanilla unconscious carry states.
 - BuddyClimb-owned carried players should use PEAK's spectator camera locked to `Character.localCharacter.data.carrier`. This camera patch is disabled when the `nakazora.peak.piggyback` plugin is detected, because Piggyback already implements the same spectator lock.
+- When `EnableBackpackTransfer` is true and the carrier has a backpack, move the carrier's backpack to the carried player during BuddyClimb carry start. If the carried player already has a backpack, drop the carried player's old backpack first. Do not restore that transferred backpack to the carrier on drop.
 - BuddyClimb climb interactions must not call the vanilla `RPCA_PassOut`; carried players should remain conscious. Send `RPCA_StartCarry` directly from the carrier's `PhotonView`, and let `CharacterCarryingPatch` apply `isCarried`, `carrier`, and `carriedPlayer`. Avoid `CharacterCarrying.StartCarry()` when the direct RPC path is needed because PEAK initializes its private `character` field in `Start()`.
 - `PeakDummyTools` settings use BepInEx `Config.Bind` in `PeakDummyToolsConfig`.
 - `PeakDummyTools` runtime config hot reload uses `FileSystemWatcher` to mark the config as dirty, then calls that mod's `Config.Reload()` on Unity's main thread from `Plugin.Update()`. Do not replace this with fixed-interval file polling.

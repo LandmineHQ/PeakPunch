@@ -5,6 +5,7 @@ namespace BuddyClimb.Localization;
 internal enum BuddyClimbTextKey
 {
     ClimbOnTeammate,
+    ClimbOnTeammateDropBackpack,
 }
 
 internal static class BuddyClimbLocalization
@@ -19,12 +20,14 @@ internal static class BuddyClimbLocalization
         new Dictionary<BuddyClimbTextKey, string>
         {
             [BuddyClimbTextKey.ClimbOnTeammate] = "Climb on!",
+            [BuddyClimbTextKey.ClimbOnTeammateDropBackpack] = "Climb on! (drop backpack)",
         };
 
     private static readonly IReadOnlyDictionary<BuddyClimbTextKey, string> ChineseText =
         new Dictionary<BuddyClimbTextKey, string>
         {
             [BuddyClimbTextKey.ClimbOnTeammate] = "爬上去!",
+            [BuddyClimbTextKey.ClimbOnTeammateDropBackpack] = "爬上去！（丢弃背包）",
         };
 
     internal static string Get(BuddyClimbTextKey key)

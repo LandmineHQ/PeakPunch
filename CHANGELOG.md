@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- Added an optional BuddyClimb backpack-transfer config for climbing onto backpack-wearing teammates.
+- Added localized climb prompt text when backpack transfer will drop the carried player's backpack.
+- Added runtime hot reload for BuddyClimb's BepInEx config file.
+
 ## 0.1.0
 
 - Forked PeakPunch as BuddyClimb.

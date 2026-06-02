@@ -1,5 +1,6 @@
 using HarmonyLib;
 using Photon.Pun;
+using BuddyClimb.Gameplay;
 using BuddyClimb.Localization;
 
 namespace BuddyClimb.Patches;
@@ -18,7 +19,13 @@ internal static class CharacterInteractiblePatch
 
         if (CanBeClimbed(__instance.character))
         {
-            __result = BuddyClimbLocalization.Get(BuddyClimbTextKey.ClimbOnTeammate);
+            BuddyClimbTextKey textKey = BackpackCarryTransfer.WillDropCarriedBackpack(
+                __instance.character,
+                Character.localCharacter)
+                ? BuddyClimbTextKey.ClimbOnTeammateDropBackpack
+                : BuddyClimbTextKey.ClimbOnTeammate;
+
+            __result = BuddyClimbLocalization.Get(textKey);
         }
     }
 
@@ -33,6 +40,11 @@ internal static class CharacterInteractiblePatch
 
         if (CanBeClimbed(__instance.character) && CanClimb(interactor))
         {
+            if (!BackpackCarryTransfer.TryTransferCarrierBackpack(__instance.character, interactor))
+            {
+                return;
+            }
+
             __instance.character.photonView.RPC(
                 nameof(CharacterCarrying.RPCA_StartCarry),
                 RpcTarget.All,
@@ -92,7 +104,7 @@ internal static class CharacterInteractiblePatch
             return false;
         }
 
-        if (character.player.backpackSlot.hasBackpack)
+        if (character.player.backpackSlot.hasBackpack && !BackpackCarryTransfer.AllowsCarrierBackpack)
         {
             return false;
         }
