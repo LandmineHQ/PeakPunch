@@ -9,23 +9,32 @@ internal static class CharacterCarryingPatch
 {
     private static readonly HashSet<int> BuddyClimbCarriedViewIds = [];
 
+    internal static bool IsBuddyClimbCarried(Character character)
+    {
+        return character?.photonView != null
+            && BuddyClimbCarriedViewIds.Contains(character.photonView.ViewID);
+    }
+
     [HarmonyPatch("Update")]
     [HarmonyPrefix]
     private static bool UpdatePrefix(CharacterCarrying __instance)
     {
         Character character = __instance.character ?? __instance.GetComponent<Character>();
-        if (character == null
-            || character.photonView == null
-            || character.data.carriedPlayer == null
-            || !BuddyClimbCarriedViewIds.Contains(character.data.carriedPlayer.photonView.ViewID))
+        if (character == null || character.photonView == null)
         {
             return true;
         }
 
-        if ((character.data.carriedPlayer.data.dead || character.data.fullyPassedOut || character.data.dead)
+        Character carriedPlayer = character.data.carriedPlayer;
+        if (carriedPlayer == null || !IsBuddyClimbCarried(carriedPlayer))
+        {
+            return true;
+        }
+
+        if ((carriedPlayer.data.dead || character.data.fullyPassedOut || character.data.dead)
             && character.refs.view.IsMine)
         {
-            __instance.Drop(character.data.carriedPlayer);
+            __instance.Drop(carriedPlayer);
         }
 
         return false;

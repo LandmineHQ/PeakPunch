@@ -38,7 +38,7 @@
 - The primary gameplay hook is `CharacterInteractiblePatch`.
 - The climb prompt must go through `BuddyClimbLocalization`; do not hardcode player-facing prompt text in patches.
 - Current localization supports English plus Simplified/Traditional Chinese, with unsupported languages falling back to English.
-- Carried local players can press Space to request a drop through the carrier's `CharacterCarrying.Drop` RPC; keep this path independent of tooling-only dummy spawning.
+- Conscious local players carried through BuddyClimb can press Space to request a drop through the carrier's `CharacterCarrying.Drop` RPC. This Space handling must consume/suppress the same-frame jump input and must not activate for vanilla unconscious carry states.
 - BuddyClimb climb interactions must not call the vanilla `RPCA_PassOut`; carried players should remain conscious. Send `RPCA_StartCarry` directly from the carrier's `PhotonView`, and let `CharacterCarryingPatch` apply `isCarried`, `carrier`, and `carriedPlayer`. Avoid `CharacterCarrying.StartCarry()` when the direct RPC path is needed because PEAK initializes its private `character` field in `Start()`.
 - `PeakDummyTools` settings use BepInEx `Config.Bind` in `PeakDummyToolsConfig`.
 - `PeakDummyTools` runtime config hot reload uses `FileSystemWatcher` to mark the config as dirty, then calls that mod's `Config.Reload()` on Unity's main thread from `Plugin.Update()`. Do not replace this with fixed-interval file polling.
