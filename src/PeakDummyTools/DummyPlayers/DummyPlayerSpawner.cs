@@ -14,11 +14,22 @@ internal static class DummyPlayerSpawner
     private const string DummyPlayerInstantiationMarker = "PeakDummyTools.DummyPlayer";
     private const int InstantiationMarkerIndex = 0;
     private const int InstantiationDummyNumberIndex = 1;
+    private const int InstantiationSkinIndex = 2;
+    private const int InstantiationAccessoryIndex = 3;
+    private const int InstantiationEyesIndex = 4;
+    private const int InstantiationMouthIndex = 5;
+    private const int InstantiationOutfitIndex = 6;
+    private const int InstantiationHatIndex = 7;
+    private const int InstantiationSashIndex = 8;
+    private const int RandomCustomizationAttempts = 8;
 
     private static readonly HashSet<int> DummySpawnedViewIds = [];
     private static readonly Dictionary<int, DummyPlayerRecord> DummyPlayersByCharacterViewId = [];
     private static readonly Dictionary<Player, int> DummyCharacterViewIdsByPlayer = [];
     private static readonly FieldInfo PlayerViewField = AccessTools.Field(typeof(Player), "view");
+    private static readonly MethodInfo OnPlayerDataChangeMethod = AccessTools.Method(
+        typeof(CharacterCustomization),
+        "OnPlayerDataChange");
 
     private static int nextDummyNumber = 1;
     private static bool creatingSyntheticPlayer;
@@ -220,6 +231,26 @@ internal static class DummyPlayerSpawner
         return true;
     }
 
+    internal static void PrepareCustomizationStart(CharacterCustomization customization)
+    {
+        if (!IsDummyCustomization(customization))
+        {
+            return;
+        }
+
+        customization.ignorePlayerCosmetics = true;
+    }
+
+    internal static void FinalizeCustomizationStart(CharacterCustomization customization)
+    {
+        if (!TryGetDummyCustomizationData(customization, out CharacterCustomizationData customizationData))
+        {
+            return;
+        }
+
+        ApplyDummyCustomization(customization, customizationData);
+    }
+
     private static void SpawnAtLocalPlayerPosition()
     {
         if (!PhotonNetwork.InRoom || !PhotonNetwork.IsMasterClient)
@@ -246,8 +277,20 @@ internal static class DummyPlayerSpawner
         int dummyNumber = nextDummyNumber++;
         Vector3 spawnPosition = GetCharacterSpawnPosition(localCharacter);
         Quaternion spawnRotation = localCharacter.transform.rotation;
+        CharacterCustomizationData customizationData = CreateRandomDummyCustomizationData(GetLocalCustomizationData());
 
-        object[] instantiationData = [DummyPlayerInstantiationMarker, dummyNumber];
+        object[] instantiationData =
+        [
+            DummyPlayerInstantiationMarker,
+            dummyNumber,
+            customizationData.currentSkin,
+            customizationData.currentAccessory,
+            customizationData.currentEyes,
+            customizationData.currentMouth,
+            customizationData.currentOutfit,
+            customizationData.currentHat,
+            customizationData.currentSash,
+        ];
         GameObject spawnedObject = PhotonNetwork.Instantiate(CharacterPrefabName, spawnPosition, spawnRotation, 0, instantiationData);
         Character spawnedCharacter = spawnedObject.GetComponent<Character>();
         if (spawnedCharacter == null)
@@ -327,6 +370,251 @@ internal static class DummyPlayerSpawner
     private static void ApplyDummyName(Character character, int dummyNumber)
     {
         character.gameObject.name = GetDummyPlayerName(dummyNumber);
+    }
+
+    private static CharacterCustomizationData CreateRandomDummyCustomizationData(CharacterCustomizationData? localCustomizationData)
+    {
+        CharacterCustomizationData? customizationData = null;
+        for (int attempt = 0; attempt < RandomCustomizationAttempts; attempt++)
+        {
+            customizationData = CreateRandomCustomizationData();
+            if (localCustomizationData == null || !HasSameCustomization(customizationData, localCustomizationData))
+            {
+                return customizationData;
+            }
+        }
+
+        customizationData ??= CreateRandomCustomizationData();
+        if (localCustomizationData != null)
+        {
+            ForceDifferentCustomization(customizationData, localCustomizationData);
+        }
+
+        return customizationData;
+    }
+
+    private static CharacterCustomizationData CreateRandomCustomizationData()
+    {
+        CharacterCustomizationData customizationData = new()
+        {
+            currentSkin = GetRandomUnlockedIndex(Customization.Type.Skin),
+            currentAccessory = GetRandomUnlockedIndex(Customization.Type.Accessory),
+            currentEyes = GetRandomUnlockedIndex(Customization.Type.Eyes),
+            currentMouth = GetRandomUnlockedIndex(Customization.Type.Mouth),
+            currentOutfit = GetRandomUnlockedIndex(Customization.Type.Fit),
+            currentHat = GetRandomUnlockedIndex(Customization.Type.Hat),
+            currentSash = GetRandomUnlockedIndex(Customization.Type.Sash),
+        };
+        customizationData.CorrectValues();
+        return customizationData;
+    }
+
+    private static CharacterCustomizationData? GetLocalCustomizationData()
+    {
+        try
+        {
+            PersistentPlayerDataService playerDataService = GameHandler.GetService<PersistentPlayerDataService>();
+            return playerDataService.GetPlayerData(PhotonNetwork.LocalPlayer).customizationData;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static int GetRandomUnlockedIndex(Customization.Type customizationType)
+    {
+        Customization customization = Customization.Instance;
+        if (customization == null)
+        {
+            return 0;
+        }
+
+        return customization.GetRandomUnlockedIndex(customizationType);
+    }
+
+    private static void ForceDifferentCustomization(
+        CharacterCustomizationData customizationData,
+        CharacterCustomizationData localCustomizationData)
+    {
+        if (TryGetDifferentUnlockedIndex(Customization.Type.Fit, localCustomizationData.currentOutfit, out int outfitIndex))
+        {
+            customizationData.currentOutfit = outfitIndex;
+            return;
+        }
+
+        if (TryGetDifferentUnlockedIndex(Customization.Type.Hat, localCustomizationData.currentHat, out int hatIndex))
+        {
+            customizationData.currentHat = hatIndex;
+            return;
+        }
+
+        if (TryGetDifferentUnlockedIndex(Customization.Type.Skin, localCustomizationData.currentSkin, out int skinIndex))
+        {
+            customizationData.currentSkin = skinIndex;
+            return;
+        }
+
+        if (TryGetDifferentUnlockedIndex(Customization.Type.Accessory, localCustomizationData.currentAccessory, out int accessoryIndex))
+        {
+            customizationData.currentAccessory = accessoryIndex;
+            return;
+        }
+
+        if (TryGetDifferentUnlockedIndex(Customization.Type.Eyes, localCustomizationData.currentEyes, out int eyesIndex))
+        {
+            customizationData.currentEyes = eyesIndex;
+            return;
+        }
+
+        if (TryGetDifferentUnlockedIndex(Customization.Type.Mouth, localCustomizationData.currentMouth, out int mouthIndex))
+        {
+            customizationData.currentMouth = mouthIndex;
+            return;
+        }
+
+        if (TryGetDifferentUnlockedIndex(Customization.Type.Sash, localCustomizationData.currentSash, out int sashIndex))
+        {
+            customizationData.currentSash = sashIndex;
+        }
+    }
+
+    private static bool TryGetDifferentUnlockedIndex(
+        Customization.Type customizationType,
+        int currentIndex,
+        out int differentIndex)
+    {
+        differentIndex = 0;
+        Customization customization = Customization.Instance;
+        if (customization == null)
+        {
+            return false;
+        }
+
+        CustomizationOption[] options = customization.GetList(customizationType);
+        List<int> candidates = [];
+        for (int index = 0; index < options.Length; index++)
+        {
+            if (index != currentIndex && !options[index].IsLocked)
+            {
+                candidates.Add(index);
+            }
+        }
+
+        if (candidates.Count == 0)
+        {
+            return false;
+        }
+
+        differentIndex = candidates[Random.Range(0, candidates.Count)];
+        return true;
+    }
+
+    private static bool HasSameCustomization(CharacterCustomizationData left, CharacterCustomizationData right)
+    {
+        return left.currentSkin == right.currentSkin
+            && left.currentAccessory == right.currentAccessory
+            && left.currentEyes == right.currentEyes
+            && left.currentMouth == right.currentMouth
+            && left.currentOutfit == right.currentOutfit
+            && left.currentHat == right.currentHat
+            && left.currentSash == right.currentSash;
+    }
+
+    private static bool IsDummyCustomization(CharacterCustomization customization)
+    {
+        if (customization == null)
+        {
+            return false;
+        }
+
+        PhotonView photonView = customization.GetComponent<PhotonView>();
+        return TryGetDummyNumber(photonView, out _);
+    }
+
+    private static bool TryGetDummyCustomizationData(
+        CharacterCustomization customization,
+        out CharacterCustomizationData customizationData)
+    {
+        customizationData = null!;
+        if (customization == null)
+        {
+            return false;
+        }
+
+        PhotonView photonView = customization.GetComponent<PhotonView>();
+        return TryGetDummyCustomizationData(photonView, out customizationData);
+    }
+
+    private static bool TryGetDummyCustomizationData(
+        PhotonView? photonView,
+        out CharacterCustomizationData customizationData)
+    {
+        customizationData = null!;
+        if (!TryGetDummyNumber(photonView, out _))
+        {
+            return false;
+        }
+
+        object[] instantiationData = photonView!.InstantiationData;
+        if (instantiationData == null || instantiationData.Length <= InstantiationSashIndex)
+        {
+            return false;
+        }
+
+        if (instantiationData[InstantiationSkinIndex] is not int skinIndex
+            || instantiationData[InstantiationAccessoryIndex] is not int accessoryIndex
+            || instantiationData[InstantiationEyesIndex] is not int eyesIndex
+            || instantiationData[InstantiationMouthIndex] is not int mouthIndex
+            || instantiationData[InstantiationOutfitIndex] is not int outfitIndex
+            || instantiationData[InstantiationHatIndex] is not int hatIndex
+            || instantiationData[InstantiationSashIndex] is not int sashIndex)
+        {
+            return false;
+        }
+
+        customizationData = new CharacterCustomizationData
+        {
+            currentSkin = skinIndex,
+            currentAccessory = accessoryIndex,
+            currentEyes = eyesIndex,
+            currentMouth = mouthIndex,
+            currentOutfit = outfitIndex,
+            currentHat = hatIndex,
+            currentSash = sashIndex,
+        };
+        customizationData.CorrectValues();
+        return true;
+    }
+
+    private static void ApplyDummyCustomization(
+        CharacterCustomization customization,
+        CharacterCustomizationData customizationData)
+    {
+        if (OnPlayerDataChangeMethod == null)
+        {
+            Plugin.Log.LogWarning("Unable to apply dummy customization because CharacterCustomization.OnPlayerDataChange was not found.");
+            return;
+        }
+
+        PersistentPlayerData playerData = new()
+        {
+            customizationData = customizationData,
+        };
+
+        try
+        {
+            customization.ignorePlayerCosmetics = false;
+            OnPlayerDataChangeMethod.Invoke(customization, [playerData]);
+        }
+        catch (System.Exception ex)
+        {
+            Plugin.Log.LogWarning($"Failed to apply dummy customization: {ex.Message}");
+        }
+        finally
+        {
+            customization.ignorePlayerCosmetics = true;
+        }
     }
 
     private static string GetDummyPlayerName(int dummyNumber)
