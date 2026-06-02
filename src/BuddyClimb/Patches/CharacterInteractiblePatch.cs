@@ -40,15 +40,21 @@ internal static class CharacterInteractiblePatch
 
         if (CanBeClimbed(__instance.character) && CanClimb(interactor))
         {
+            if (BackpackCarryTransfer.WillDropCarriedBackpack(__instance.character, interactor))
+            {
+                if (!BackpackCarryTransfer.CanTransferCarrierBackpack(__instance.character, interactor)
+                    || !BackpackCarryTransfer.TryDropCarriedBackpackSnapshot(interactor))
+                {
+                    return;
+                }
+            }
+
             if (!BackpackCarryTransfer.TryTransferCarrierBackpack(__instance.character, interactor))
             {
                 return;
             }
 
-            __instance.character.photonView.RPC(
-                nameof(CharacterCarrying.RPCA_StartCarry),
-                RpcTarget.All,
-                interactor.photonView);
+            StartCarry(__instance.character, interactor);
         }
     }
 
@@ -184,5 +190,13 @@ internal static class CharacterInteractiblePatch
             || character.data.isClimbingAnything
             || character.data.isCrouching
             || character.data.isReaching;
+    }
+
+    private static void StartCarry(Character carrier, Character carried)
+    {
+        carrier.photonView.RPC(
+            nameof(CharacterCarrying.RPCA_StartCarry),
+            RpcTarget.All,
+            carried.photonView);
     }
 }

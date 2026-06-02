@@ -4,7 +4,7 @@
     <TargetFramework>netstandard2.1</TargetFramework>
     <AssemblyName>com.github.LandmineHQ.PeakPunch</AssemblyName>
     <AssemblyTitle>BuddyClimb</AssemblyTitle>
-    <Version>0.1.1</Version>
+    <Version>0.1.2</Version>
   </PropertyGroup>
 
   <!-- ThunderPipe properties -->

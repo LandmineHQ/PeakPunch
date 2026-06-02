@@ -20,6 +20,47 @@ internal static class BackpackCarryTransfer
             && HasBackpack(carried);
     }
 
+    internal static bool CanTransferCarrierBackpack(Character carrier, Character carried)
+    {
+        if (!AllowsCarrierBackpack
+            || carrier == null
+            || carried == null
+            || !HasBackpack(carrier))
+        {
+            return true;
+        }
+
+        Player carrierPlayer = carrier.player;
+        Player carriedPlayer = carried.player;
+        return CanSyncInventory(carrierPlayer) && CanSyncInventory(carriedPlayer);
+    }
+
+    internal static bool TryDropCarriedBackpackSnapshot(Character carried)
+    {
+        if (carried == null || !HasBackpack(carried))
+        {
+            return true;
+        }
+
+        CharacterItems characterItems = carried.refs.items;
+        if (characterItems == null || characterItems.photonView == null)
+        {
+            Plugin.Log.LogWarning($"Unable to drop {carried.characterName}'s backpack because CharacterItems is unavailable.");
+            return false;
+        }
+
+        BackpackSlot backpackSlot = carried.player.backpackSlot;
+        EnsureSnapshotDropRpc(carried).DropBackpackSnapshot(
+            backpackSlot.GetPrefabName(),
+            backpackSlot.data,
+            GetBackpackDropPosition(carried));
+
+        backpackSlot.EmptyOut();
+        carried.refs.afflictions.UpdateWeight();
+
+        return true;
+    }
+
     internal static bool TryTransferCarrierBackpack(Character carrier, Character carried)
     {
         if (!AllowsCarrierBackpack
@@ -38,8 +79,9 @@ internal static class BackpackCarryTransfer
             return false;
         }
 
-        if (HasBackpack(carried) && !TryDropBackpack(carried))
+        if (HasBackpack(carried))
         {
+            Plugin.Log.LogWarning($"Skipping backpack transfer because {carried.characterName} is still wearing a backpack.");
             return false;
         }
 
@@ -56,24 +98,6 @@ internal static class BackpackCarryTransfer
     private static bool HasBackpack(Character character)
     {
         return character.player?.backpackSlot is { hasBackpack: true };
-    }
-
-    private static bool TryDropBackpack(Character character)
-    {
-        CharacterItems characterItems = character.refs.items;
-        if (characterItems == null || characterItems.photonView == null)
-        {
-            Plugin.Log.LogWarning($"Unable to drop {character.characterName}'s backpack because CharacterItems is unavailable.");
-            return false;
-        }
-
-        characterItems.photonView.RPC(
-            nameof(CharacterItems.DropItemFromSlotRPC),
-            RpcTarget.All,
-            BackpackSlotIndex,
-            GetBackpackDropPosition(character));
-
-        return true;
     }
 
     private static Vector3 GetBackpackDropPosition(Character character)
@@ -107,5 +131,10 @@ internal static class BackpackCarryTransfer
             && player.itemSlots != null
             && player.backpackSlot != null
             && player.tempFullSlot != null;
+    }
+
+    private static BackpackSnapshotDropRpc EnsureSnapshotDropRpc(Character character)
+    {
+        return BackpackSnapshotDropRpc.Ensure(character);
     }
 }

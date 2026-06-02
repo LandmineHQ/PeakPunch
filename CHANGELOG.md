@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.2
+
+- Fixed backpack-transfer ordering so the carried player's backpack is snapshotted and dropped before the carrier's backpack is moved.
+
 ## 0.1.1
 
 - Added an optional BuddyClimb backpack-transfer config for climbing onto backpack-wearing teammates.
