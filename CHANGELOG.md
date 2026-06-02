@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- Allowed carried players to be climbed while blocking targets that are already carrying someone.
+
 ## 0.1.3
 
 - Changed BuddyClimb carry spectate to watch the carried local player and use PEAK's default spectator zoom range.

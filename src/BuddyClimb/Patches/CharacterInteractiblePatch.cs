@@ -120,12 +120,7 @@ internal static class CharacterInteractiblePatch
             return false;
         }
 
-        if (character.data.carriedPlayer)
-        {
-            return false;
-        }
-
-        if (character.data.carrier)
+        if (character.data.IsCarryingCharacter)
         {
             return false;
         }
@@ -170,7 +165,7 @@ internal static class CharacterInteractiblePatch
             return false;
         }
 
-        if (character.data.carrier)
+        if (character.data.isCarried)
         {
             return false;
         }
