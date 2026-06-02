@@ -1,9 +1,12 @@
 # Changelog
 
+## 0.1.3
+
+- Changed BuddyClimb carry spectate to watch the carried local player and use PEAK's default spectator zoom range.
+
 ## 0.1.2
 
 - Fixed backpack-transfer ordering so the carried player's backpack is snapshotted and dropped before the carrier's backpack is moved.
-- Changed BuddyClimb carry spectate to watch the carried local player and use PEAK's default spectator zoom range.
 
 ## 0.1.1
 
