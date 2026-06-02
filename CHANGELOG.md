@@ -1,8 +1,16 @@
 # Changelog
 
+## 0.1.5
+
+- Added a carried-player interaction proxy for all carry states so `isCarried` targets can be hit directly by PEAK's interaction raycasts.
+- Removed carrier-to-carried climb target redirection.
+- Allowed local players who are already carrying someone to climb while blocking cyclic carry links.
+
 ## 0.1.4
 
 - Allowed carried players to be climbed while blocking targets that are already carrying someone.
+- Redirected climb interactions from a carrier to their carried player so carried players can still be targeted when the carrier is hit first.
+- Suppressed PEAK's vanilla `E` drop prompt and interaction for BuddyClimb-carried players.
 
 ## 0.1.3
 

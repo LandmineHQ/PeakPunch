@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using BuddyClimb.Gameplay;
 using HarmonyLib;
 using Photon.Pun;
 
@@ -54,6 +55,16 @@ internal static class CharacterCarryingPatch
         return true;
     }
 
+    [HarmonyPatch(nameof(CharacterCarrying.RPCA_Drop))]
+    [HarmonyPostfix]
+    private static void RPCA_DropPostfix(PhotonView targetView)
+    {
+        if (targetView != null)
+        {
+            CarryInteractionProxy.Disable(targetView.GetComponent<Character>());
+        }
+    }
+
     [HarmonyPatch(nameof(CharacterCarrying.RPCA_StartCarry))]
     [HarmonyPrefix]
     private static bool RPCA_StartCarryPrefix(CharacterCarrying __instance, PhotonView targetView)
@@ -98,5 +109,17 @@ internal static class CharacterCarryingPatch
         }
 
         return false;
+    }
+
+    [HarmonyPatch(nameof(CharacterCarrying.RPCA_StartCarry))]
+    [HarmonyPostfix]
+    private static void RPCA_StartCarryPostfix(PhotonView targetView)
+    {
+        if (targetView != null
+            && targetView.GetComponent<Character>() is Character carriedCharacter
+            && carriedCharacter.data.isCarried)
+        {
+            CarryInteractionProxy.Enable(carriedCharacter);
+        }
     }
 }

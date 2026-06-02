@@ -12,16 +12,23 @@ internal static class CharacterInteractiblePatch
     [HarmonyPostfix]
     private static void GetInteractionTextPatch(ref string __result, CharacterInteractible __instance)
     {
+        Character interactor = Character.localCharacter;
+        if (IsBuddyClimbDropInteraction(__instance.character, interactor))
+        {
+            __result = string.Empty;
+            return;
+        }
+
         if (__result != string.Empty)
         {
             return;
         }
 
-        if (CanBeClimbed(__instance.character))
+        if (CanStartClimb(__instance.character, interactor))
         {
             BuddyClimbTextKey textKey = BackpackCarryTransfer.WillDropCarriedBackpack(
                 __instance.character,
-                Character.localCharacter)
+                interactor)
                 ? BuddyClimbTextKey.ClimbOnTeammateDropBackpack
                 : BuddyClimbTextKey.ClimbOnTeammate;
 
@@ -30,44 +37,38 @@ internal static class CharacterInteractiblePatch
     }
 
     [HarmonyPatch(nameof(CharacterInteractible.Interact))]
-    [HarmonyPostfix]
-    private static void InteractPatch(CharacterInteractible __instance, ref Character interactor)
+    [HarmonyPrefix]
+    private static bool InteractPatch(CharacterInteractible __instance, ref Character interactor)
     {
-        if (__instance.CarriedByLocalCharacter() || (!__instance.IsCannibal() && __instance.CanBeCarried()))
+        if (IsBuddyClimbDropInteraction(__instance.character, interactor))
         {
-            return;
+            return false;
         }
 
-        if (CanBeClimbed(__instance.character) && CanClimb(interactor))
+        if (__instance.CarriedByLocalCharacter() || __instance.IsCannibal() || __instance.CanBeCarried())
         {
-            if (BackpackCarryTransfer.WillDropCarriedBackpack(__instance.character, interactor))
-            {
-                if (!BackpackCarryTransfer.CanTransferCarrierBackpack(__instance.character, interactor)
-                    || !BackpackCarryTransfer.TryDropCarriedBackpackSnapshot(interactor))
-                {
-                    return;
-                }
-            }
-
-            if (!BackpackCarryTransfer.TryTransferCarrierBackpack(__instance.character, interactor))
-            {
-                return;
-            }
-
-            StartCarry(__instance.character, interactor);
+            return true;
         }
+
+        return !TryStartClimb(__instance.character, interactor);
     }
 
     [HarmonyPatch(nameof(CharacterInteractible.IsInteractible))]
     [HarmonyPostfix]
     private static void IsInteractiblePatch(CharacterInteractible __instance, ref bool __result, ref Character interactor)
     {
+        if (IsBuddyClimbDropInteraction(__instance.character, interactor))
+        {
+            __result = false;
+            return;
+        }
+
         if (__result)
         {
             return;
         }
 
-        if (CanBeClimbed(__instance.character) && CanClimb(interactor))
+        if (CanStartClimb(__instance.character, interactor))
         {
             __result = true;
         }
@@ -77,12 +78,18 @@ internal static class CharacterInteractiblePatch
     [HarmonyPostfix]
     private static void IsPrimaryInteractiblePatch(CharacterInteractible __instance, ref bool __result, ref Character interactor)
     {
+        if (IsBuddyClimbDropInteraction(__instance.character, interactor))
+        {
+            __result = false;
+            return;
+        }
+
         if (__result)
         {
             return;
         }
 
-        if (CanBeClimbed(__instance.character) && CanClimb(interactor))
+        if (CanStartClimb(__instance.character, interactor))
         {
             __result = true;
         }
@@ -185,6 +192,70 @@ internal static class CharacterInteractiblePatch
             || character.data.isClimbingAnything
             || character.data.isCrouching
             || character.data.isReaching;
+    }
+
+    private static bool TryStartClimb(Character character, Character interactor)
+    {
+        if (!CanStartClimb(character, interactor))
+        {
+            return false;
+        }
+
+        if (BackpackCarryTransfer.WillDropCarriedBackpack(character, interactor))
+        {
+            if (!BackpackCarryTransfer.CanTransferCarrierBackpack(character, interactor)
+                || !BackpackCarryTransfer.TryDropCarriedBackpackSnapshot(interactor))
+            {
+                return false;
+            }
+        }
+
+        if (!BackpackCarryTransfer.TryTransferCarrierBackpack(character, interactor))
+        {
+            return false;
+        }
+
+        StartCarry(character, interactor);
+        return true;
+    }
+
+    private static bool CanStartClimb(Character carrier, Character carried)
+    {
+        return CanBeClimbed(carrier)
+            && CanClimb(carried)
+            && CanCreateCarryLink(carrier, carried);
+    }
+
+    private static bool CanCreateCarryLink(Character carrier, Character carried)
+    {
+        if (carrier == null || carried == null)
+        {
+            return false;
+        }
+
+        Character currentCarrier = carrier;
+        while (true)
+        {
+            if (currentCarrier == carried)
+            {
+                return false;
+            }
+
+            if (currentCarrier.data?.carrier is not Character nextCarrier)
+            {
+                return true;
+            }
+
+            currentCarrier = nextCarrier;
+        }
+    }
+
+    private static bool IsBuddyClimbDropInteraction(Character character, Character interactor)
+    {
+        return character != null
+            && interactor != null
+            && character.data.carrier == interactor
+            && CharacterCarryingPatch.IsBuddyClimbCarried(character);
     }
 
     private static void StartCarry(Character carrier, Character carried)
