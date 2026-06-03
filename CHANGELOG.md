@@ -1,10 +1,17 @@
 # Changelog
 
-## 0.1.8
+## 0.1.7
 
 - Corrected BuddyClimb's assembly/config identity to `com.github.LandmineHQ.BuddyClimb`.
 - Switched all mod config hot reload paths from `Update()` polling to debounced `FileSystemWatcher` callbacks.
 - Documented that BuddyClimb config changes apply without restarting the game.
+- Updated the local build script to support `debug`, `release`, and `push` modes without overriding `DeployModFiles`.
+
+## 0.1.6
+
+- Updated README wording to describe making teammates carry you, including backpack support.
+- Replaced the package icon with the current BuddyClimb carry-focused icon.
+- Bumped the BuddyClimb package version to `0.1.6`.
 
 ## 0.1.5
 

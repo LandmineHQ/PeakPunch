@@ -1,20 +1,15 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("Debug", "Release")]
-    [string]$Configuration,
+    [Parameter(Position = 0)]
+    [ValidateSet("debug", "release", "push")]
+    [string]$Mode = "release",
 
-    [switch]$Deploy,
-
-    [ValidateSet("quiet", "minimal", "normal", "detailed", "diagnostic")]
+    [ValidateSet("q", "quiet", "m", "minimal", "n", "normal", "d", "detailed", "diag", "diagnostic")]
     [string]$Verbosity = "minimal"
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
-
-if ([string]::IsNullOrWhiteSpace($Configuration)) {
-    $Configuration = "Debug"
-}
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $localConfig = Join-Path $repoRoot "Config.Build.user.props"
@@ -23,11 +18,22 @@ if (-not (Test-Path -LiteralPath $localConfig)) {
 }
 
 $solution = Join-Path $repoRoot "BuddyClimb.slnx"
-$deployModFiles = if ($Deploy) { "true" } else { "false" }
+$normalizedMode = $Mode.ToLowerInvariant()
+$configuration = if ($normalizedMode -eq "debug") { "Debug" } else { "Release" }
 
-& dotnet build $solution `
-    -c $Configuration `
-    "-p:DeployModFiles=$deployModFiles" `
-    "-v:$Verbosity"
+$buildArgs = @(
+    "build",
+    $solution,
+    "-c",
+    $configuration,
+    "-v",
+    $Verbosity
+)
+
+if ($normalizedMode -eq "push") {
+    $buildArgs += "-p:PublishTS=true"
+}
+
+& dotnet @buildArgs
 
 exit $LASTEXITCODE

@@ -22,10 +22,12 @@
 - `Config.Build.user.props` is the local machine configuration file for this template, similar in role to a `.env` file. It is gitignored and should not be committed.
 - Copy `Config.Build.user.props.template` to `Config.Build.user.props` and set `PEAKGameRootDir` there when the default Steam install path is not correct for the current machine.
 - Use `scripts/build.ps1` for local validation. The script requires `Config.Build.user.props` and relies on its MSBuild properties instead of shell environment variables.
-- Debug validation: `.\scripts\build.ps1`
-- Release packaging validation: `.\scripts\build.ps1 -Configuration Release`
+- Default validation: `.\scripts\build.ps1` runs `release`.
+- Debug validation: `.\scripts\build.ps1 debug`
+- Release packaging validation: `.\scripts\build.ps1 release`
+- Thunderstore publish validation/push: `.\scripts\build.ps1 push`. This runs Release with `-p:PublishTS=true` and requires the local Thunderstore token setup from `Config.Build.user.props`.
+- The build script passes verbosity as `dotnet build -v <Verbosity>` and defaults to `minimal`; use `-Verbosity d` to match the PEAKModding packaging docs' detailed output. It does not override `DeployModFiles`; set deployment behavior in `Config.Build.user.props`.
 - Normal solution builds should produce three DLLs: `com.github.LandmineHQ.BuddyClimb.dll`, `com.github.LandmineHQ.PeakDummyTools.dll`, and `com.github.LandmineHQ.PeakPlayerLOD.dll`.
-- Pass `-Deploy` only when intentionally copying the built DLL into the local BepInEx directory. The script disables deployment by default even if the local props file enables it.
 - Release package output is under `artifacts/thunderstore/release/`. `BuddyClimb` is Thunderstore-packable; `PeakDummyTools` and `PeakPlayerLOD` are local DLLs and are not packed unless their project metadata is intentionally changed.
 - `artifacts/` is build output and should not be committed.
 - When reading text files from PowerShell, use explicit UTF-8, for example `Get-Content -Encoding UTF8 <path>`.
