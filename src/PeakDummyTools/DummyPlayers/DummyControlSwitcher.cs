@@ -4,6 +4,7 @@ using HarmonyLib;
 using PeakDummyTools.Configuration;
 using PeakDummyTools.Localization;
 using Photon.Pun;
+using Photon.Voice.Unity;
 using UnityEngine;
 
 namespace PeakDummyTools.DummyPlayers;
@@ -21,23 +22,23 @@ internal static class DummyControlSwitcher
         nameof(MainCameraMovement.specCharacter));
     private static readonly RaycastHit[] LineOfSightHits = new RaycastHit[LineOfSightHitBufferSize];
 
-    private static Character? hostCharacter;
+    private static Character? originalLocalCharacter;
     private static Character? controlledDummy;
 
     internal static void Update()
     {
         if (!CanUseDummyControl())
         {
-            RestoreHostControlIfNeeded();
+            RestoreOriginalLocalControlIfNeeded();
             return;
         }
 
         if (controlledDummy != null && !CanControlCharacter(controlledDummy))
         {
-            RestoreHostControlIfNeeded();
+            RestoreOriginalLocalControlIfNeeded();
         }
 
-        CaptureHostCharacterIfAvailable();
+        CaptureOriginalLocalCharacterIfAvailable();
 
         if (!PeakDummyToolsConfig.SwitchControlShortcut.Value.IsDown())
         {
@@ -77,6 +78,20 @@ internal static class DummyControlSwitcher
         return TryGetSwitchPrompt(target, out keyText, out text);
     }
 
+    internal static bool TryGetCurrentHoveredSwitchPrompt(out string keyText, out string text)
+    {
+        keyText = string.Empty;
+        text = string.Empty;
+
+        Interaction interaction = Interaction.instance;
+        if (interaction?.currentHovered is not CharacterInteractible characterInteractible)
+        {
+            return false;
+        }
+
+        return TryGetSwitchPrompt(characterInteractible.character, out keyText, out text);
+    }
+
     internal static bool CanShowSwitchPrompt(Character character)
     {
         if (!CanUseDummyControl() || character == null || character == Character.localCharacter)
@@ -84,14 +99,14 @@ internal static class DummyControlSwitcher
             return false;
         }
 
-        CaptureHostCharacterIfAvailable();
+        CaptureOriginalLocalCharacterIfAvailable();
 
         if (DummyPlayerSpawner.IsDummyPlayer(character))
         {
             return CanControlCharacter(character);
         }
 
-        return IsControllingDummy() && hostCharacter != null && character == hostCharacter;
+        return IsControllingDummy() && originalLocalCharacter != null && character == originalLocalCharacter;
     }
 
     internal static void HandleCharacterRemoved(Character character)
@@ -101,9 +116,9 @@ internal static class DummyControlSwitcher
             return;
         }
 
-        if (character == hostCharacter)
+        if (character == originalLocalCharacter)
         {
-            hostCharacter = null;
+            originalLocalCharacter = null;
         }
 
         if (character != controlledDummy)
@@ -112,10 +127,10 @@ internal static class DummyControlSwitcher
         }
 
         controlledDummy = null;
-        if (TryFindHostCharacter(out Character host))
+        if (TryFindOriginalLocalCharacter(out Character originalLocal))
         {
-            AssignLocalControl(host);
-            Plugin.Log.LogInfo("Restored host control because the controlled dummy was removed.");
+            AssignLocalControl(originalLocal);
+            Plugin.Log.LogInfo("Restored local control because the controlled dummy was removed.");
         }
     }
 
@@ -130,7 +145,7 @@ internal static class DummyControlSwitcher
 
         PeakDummyToolsTextKey textKey = DummyPlayerSpawner.IsDummyPlayer(character)
             ? PeakDummyToolsTextKey.SwitchControlToDummy
-            : PeakDummyToolsTextKey.SwitchControlToHost;
+            : PeakDummyToolsTextKey.SwitchControlToOriginal;
         keyText = GetShortcutText();
         text = PeakDummyToolsLocalization.Get(textKey);
         return true;
@@ -146,7 +161,7 @@ internal static class DummyControlSwitcher
 
         if (IsControllingDummy())
         {
-            RestoreHostControlIfNeeded();
+            RestoreOriginalLocalControlIfNeeded();
             return;
         }
 
@@ -310,15 +325,15 @@ internal static class DummyControlSwitcher
             return;
         }
 
-        if (!CaptureHostCharacterIfAvailable())
+        if (!CaptureOriginalLocalCharacterIfAvailable())
         {
-            Plugin.Log.LogWarning("Unable to switch dummy control because the host character could not be found.");
+            Plugin.Log.LogWarning("Unable to switch dummy control because the original local character could not be found.");
             return;
         }
 
-        if (target == hostCharacter)
+        if (target == originalLocalCharacter)
         {
-            RestoreHostControlIfNeeded();
+            RestoreOriginalLocalControlIfNeeded();
             return;
         }
 
@@ -327,7 +342,7 @@ internal static class DummyControlSwitcher
         Plugin.Log.LogInfo($"Switched local control to {target.characterName}.");
     }
 
-    private static void RestoreHostControlIfNeeded()
+    private static void RestoreOriginalLocalControlIfNeeded()
     {
         if (!IsControllingDummy())
         {
@@ -335,16 +350,16 @@ internal static class DummyControlSwitcher
             return;
         }
 
-        if (!TryFindHostCharacter(out Character host))
+        if (!TryFindOriginalLocalCharacter(out Character originalLocal))
         {
-            Plugin.Log.LogWarning("Unable to restore host control because the host character could not be found.");
+            Plugin.Log.LogWarning("Unable to restore local control because the original local character could not be found.");
             controlledDummy = null;
             return;
         }
 
-        AssignLocalControl(host);
+        AssignLocalControl(originalLocal);
         controlledDummy = null;
-        Plugin.Log.LogInfo("Restored local control to the host character.");
+        Plugin.Log.LogInfo("Restored local control to the original local character.");
     }
 
     private static void AssignLocalControl(Character target)
@@ -361,10 +376,31 @@ internal static class DummyControlSwitcher
         }
 
         SetSpecCharacterMethod?.Invoke(null, [null]);
+        AssignLocalVoiceRecorder(previous, target);
         if (!target.gameObject.activeSelf)
         {
             target.gameObject.SetActive(true);
         }
+    }
+
+    private static void AssignLocalVoiceRecorder(Character? previous, Character target)
+    {
+        Recorder? targetRecorder = target.GetComponentInChildren<Recorder>(true);
+        Recorder? previousRecorder = previous != null
+            ? previous.GetComponentInChildren<Recorder>(true)
+            : null;
+        if (previousRecorder != null && previousRecorder != targetRecorder)
+        {
+            previousRecorder.TransmitEnabled = false;
+        }
+
+        if (targetRecorder == null)
+        {
+            Plugin.Log.LogWarning($"Unable to switch voice recorder because {target.characterName} has no Recorder component.");
+            return;
+        }
+
+        VoiceClientHandler.LocalPlayerAssigned(targetRecorder);
     }
 
     private static void ResetInput(Character? character)
@@ -377,38 +413,38 @@ internal static class DummyControlSwitcher
         ResetInputMethod.Invoke(character.input, []);
     }
 
-    private static bool CaptureHostCharacterIfAvailable()
+    private static bool CaptureOriginalLocalCharacterIfAvailable()
     {
         Character localCharacter = Character.localCharacter;
-        if (IsHostCharacter(localCharacter))
+        if (IsOriginalLocalCharacter(localCharacter))
         {
-            hostCharacter = localCharacter;
+            originalLocalCharacter = localCharacter;
             return true;
         }
 
-        if (IsHostCharacter(hostCharacter))
+        if (IsOriginalLocalCharacter(originalLocalCharacter))
         {
             return true;
         }
 
-        if (TryFindHostCharacter(out Character foundHost))
+        if (TryFindOriginalLocalCharacter(out Character foundOriginalLocal))
         {
-            hostCharacter = foundHost;
+            originalLocalCharacter = foundOriginalLocal;
             return true;
         }
 
         return false;
     }
 
-    private static bool TryFindHostCharacter(out Character character)
+    private static bool TryFindOriginalLocalCharacter(out Character character)
     {
         character = null!;
         foreach (Character candidate in Character.AllCharacters)
         {
-            if (IsHostCharacter(candidate))
+            if (IsOriginalLocalCharacter(candidate))
             {
                 character = candidate;
-                hostCharacter = candidate;
+                originalLocalCharacter = candidate;
                 return true;
             }
         }
@@ -416,7 +452,7 @@ internal static class DummyControlSwitcher
         return false;
     }
 
-    private static bool IsHostCharacter(Character? character)
+    private static bool IsOriginalLocalCharacter(Character? character)
     {
         return character != null
             && character.photonView != null
@@ -444,8 +480,7 @@ internal static class DummyControlSwitcher
     private static bool CanUseDummyControl()
     {
         return PeakDummyToolsConfig.EnableDummyTools.Value
-            && PhotonNetwork.InRoom
-            && PhotonNetwork.IsMasterClient;
+            && PhotonNetwork.InRoom;
     }
 
     private static string GetShortcutText()

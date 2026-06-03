@@ -21,6 +21,7 @@ internal static class DummyPlayerSpawner
     private const int InstantiationOutfitIndex = 6;
     private const int InstantiationHatIndex = 7;
     private const int InstantiationSashIndex = 8;
+    private const int InstantiationOwnerNamePrefixIndex = 9;
     private const int RandomCustomizationAttempts = 8;
 
     private static readonly HashSet<int> DummySpawnedViewIds = [];
@@ -34,15 +35,17 @@ internal static class DummyPlayerSpawner
     private static int nextDummyNumber = 1;
     private static bool creatingSyntheticPlayer;
     private static string pendingSyntheticPlayerName = string.Empty;
+    private static int cachedLocalPlayerActorNumber;
+    private static string cachedLocalPlayerNamePrefix = string.Empty;
 
     private sealed class DummyPlayerRecord
     {
-        internal DummyPlayerRecord(int dummyNumber, Player player)
+        internal DummyPlayerRecord(int dummyNumber, int characterViewId, Player player)
         {
             DummyNumber = dummyNumber;
             Player = player;
-            UserId = $"{DummyPlayerInstantiationMarker}.{dummyNumber}";
-            ActorNumber = -10_000 - dummyNumber;
+            UserId = $"{DummyPlayerInstantiationMarker}.{characterViewId}";
+            ActorNumber = characterViewId > 0 ? -characterViewId : -10_000 - dummyNumber;
         }
 
         internal int DummyNumber { get; }
@@ -216,7 +219,7 @@ internal static class DummyPlayerSpawner
             return false;
         }
 
-        name = GetDummyPlayerName(dummyNumber);
+        name = GetDummyPlayerName(character, dummyNumber);
         return true;
     }
 
@@ -253,9 +256,9 @@ internal static class DummyPlayerSpawner
 
     private static void SpawnAtLocalPlayerPosition()
     {
-        if (!PhotonNetwork.InRoom || !PhotonNetwork.IsMasterClient)
+        if (!PhotonNetwork.InRoom)
         {
-            Plugin.Log.LogWarning("Dummy player spawn is host-only and requires an active Photon room.");
+            Plugin.Log.LogWarning("Dummy player spawn requires an active Photon room.");
             return;
         }
 
@@ -275,6 +278,7 @@ internal static class DummyPlayerSpawner
 
         int localActorNumber = PhotonNetwork.LocalPlayer.ActorNumber;
         int dummyNumber = nextDummyNumber++;
+        string ownerNamePrefix = GetCachedLocalPlayerNamePrefix();
         Vector3 spawnPosition = GetCharacterSpawnPosition(localCharacter);
         Quaternion spawnRotation = localCharacter.transform.rotation;
         CharacterCustomizationData customizationData = CreateRandomDummyCustomizationData(GetLocalCustomizationData());
@@ -290,6 +294,7 @@ internal static class DummyPlayerSpawner
             customizationData.currentOutfit,
             customizationData.currentHat,
             customizationData.currentSash,
+            ownerNamePrefix,
         ];
         GameObject spawnedObject = PhotonNetwork.Instantiate(CharacterPrefabName, spawnPosition, spawnRotation, 0, instantiationData);
         Character spawnedCharacter = spawnedObject.GetComponent<Character>();
@@ -312,7 +317,7 @@ internal static class DummyPlayerSpawner
     {
         FinalizeCharacterAwake(spawnedCharacter);
 
-        // Keep this fallback even though the Awake prefix prevents PEAK from replacing the host's character.
+        // Keep this fallback even though the Awake prefix prevents PEAK from replacing the local character.
         Character.localCharacter = localCharacter;
         playerHandler.m_playerCharacterLookup[localActorNumber] = localCharacter;
         if (!localCharacter.gameObject.activeSelf)
@@ -329,7 +334,7 @@ internal static class DummyPlayerSpawner
             return existingRecord.Player;
         }
 
-        string playerName = GetDummyPlayerName(dummyNumber);
+        string playerName = GetDummyPlayerName(character, dummyNumber);
         pendingSyntheticPlayerName = playerName;
         creatingSyntheticPlayer = true;
         Player player;
@@ -346,7 +351,7 @@ internal static class DummyPlayerSpawner
         }
 
         InitializeSyntheticPlayer(player, playerName);
-        DummyPlayerRecord record = new(dummyNumber, player);
+        DummyPlayerRecord record = new(dummyNumber, viewId, player);
         DummyPlayersByCharacterViewId[viewId] = record;
         DummyCharacterViewIdsByPlayer[player] = viewId;
         return player;
@@ -369,7 +374,7 @@ internal static class DummyPlayerSpawner
 
     private static void ApplyDummyName(Character character, int dummyNumber)
     {
-        character.gameObject.name = GetDummyPlayerName(dummyNumber);
+        character.gameObject.name = GetDummyPlayerName(character, dummyNumber);
     }
 
     private static CharacterCustomizationData CreateRandomDummyCustomizationData(CharacterCustomizationData? localCustomizationData)
@@ -617,9 +622,52 @@ internal static class DummyPlayerSpawner
         }
     }
 
-    private static string GetDummyPlayerName(int dummyNumber)
+    private static string GetDummyPlayerName(Character character, int dummyNumber)
     {
-        return PeakDummyToolsLocalization.Format(PeakDummyToolsTextKey.DummyPlayerNameFormat, dummyNumber);
+        string dummyName = PeakDummyToolsLocalization.Format(PeakDummyToolsTextKey.DummyPlayerNameFormat, dummyNumber);
+        if (!TryGetDummyOwnerNamePrefix(character.photonView, out string ownerNamePrefix))
+        {
+            return dummyName;
+        }
+
+        return $"{ownerNamePrefix}[{dummyName}]";
+    }
+
+    private static string GetCachedLocalPlayerNamePrefix()
+    {
+        int actorNumber = PhotonNetwork.LocalPlayer != null
+            ? PhotonNetwork.LocalPlayer.ActorNumber
+            : 0;
+        if (!string.IsNullOrWhiteSpace(cachedLocalPlayerNamePrefix)
+            && cachedLocalPlayerActorNumber == actorNumber)
+        {
+            return cachedLocalPlayerNamePrefix;
+        }
+
+        cachedLocalPlayerActorNumber = actorNumber;
+        cachedLocalPlayerNamePrefix = GetCurrentLocalPlayerNamePrefix(actorNumber);
+        return cachedLocalPlayerNamePrefix;
+    }
+
+    private static string GetCurrentLocalPlayerNamePrefix(int actorNumber)
+    {
+        string nickname = PhotonNetwork.LocalPlayer?.NickName ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(nickname))
+        {
+            return nickname.Trim();
+        }
+
+        Character localCharacter = Character.localCharacter;
+        if (localCharacter != null)
+        {
+            string characterName = localCharacter.characterName;
+            if (!string.IsNullOrWhiteSpace(characterName))
+            {
+                return characterName.Trim();
+            }
+        }
+
+        return actorNumber != 0 ? $"Player{actorNumber}" : "Player";
     }
 
     private static Vector3 GetCharacterSpawnPosition(Character character)
@@ -660,5 +708,29 @@ internal static class DummyPlayerSpawner
         }
 
         return false;
+    }
+
+    private static bool TryGetDummyOwnerNamePrefix(PhotonView? photonView, out string ownerNamePrefix)
+    {
+        ownerNamePrefix = string.Empty;
+        if (photonView == null || !TryGetDummyNumber(photonView, out _))
+        {
+            return false;
+        }
+
+        object[] instantiationData = photonView.InstantiationData;
+        if (instantiationData == null || instantiationData.Length <= InstantiationOwnerNamePrefixIndex)
+        {
+            return false;
+        }
+
+        if (instantiationData[InstantiationOwnerNamePrefixIndex] is not string prefix
+            || string.IsNullOrWhiteSpace(prefix))
+        {
+            return false;
+        }
+
+        ownerNamePrefix = prefix.Trim();
+        return true;
     }
 }

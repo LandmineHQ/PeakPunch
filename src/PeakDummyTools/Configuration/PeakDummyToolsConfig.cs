@@ -34,13 +34,13 @@ internal static class PeakDummyToolsConfig
             "Dummy Spawner",
             "SpawnDummyShortcut",
             new KeyboardShortcut(KeyCode.G, KeyCode.LeftAlt),
-            "When dummy tools are enabled, host can press this shortcut to spawn a dummy player at the local player's position.");
+            "When dummy tools are enabled, the local client can press this shortcut to spawn a dummy player at the local player's position.");
 
         SwitchControlShortcut = config.Bind(
             "Dummy Control",
             "SwitchControlShortcut",
             new KeyboardShortcut(KeyCode.T, KeyCode.LeftAlt),
-            "When dummy tools are enabled, host can press this shortcut while targeting a dummy player to control it. Press again with no dummy target to return to the host character.");
+            "When dummy tools are enabled, the local client can press this shortcut while targeting an owned dummy player to control it. Press again with no dummy target to return to the original local character.");
     }
 
     internal static void EnableHotReload(ConfigFile config)

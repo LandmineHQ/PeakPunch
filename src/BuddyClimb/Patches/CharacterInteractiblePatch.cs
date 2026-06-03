@@ -132,11 +132,6 @@ internal static class CharacterInteractiblePatch
             return false;
         }
 
-        if (character.data.currentItem && character.data.currentItem.canUseOnFriend)
-        {
-            return false;
-        }
-
         if (character.refs.customization.isCannibalizable)
         {
             return false;

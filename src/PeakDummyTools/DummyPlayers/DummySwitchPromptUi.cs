@@ -15,15 +15,19 @@ internal static class DummySwitchPromptUi
     private static SwitchPromptView? promptView;
     private static GUIManager? sourceGuiManager;
 
-    internal static void Update()
+    internal static void RefreshAfterNativePrompt(GUIManager guiManager)
     {
-        if (!DummyControlSwitcher.TryGetSwitchPrompt(out string keyText, out string labelText))
+        UpdatePrompt(guiManager);
+    }
+
+    private static void UpdatePrompt(GUIManager guiManager)
+    {
+        if (!DummyControlSwitcher.TryGetCurrentHoveredSwitchPrompt(out string keyText, out string labelText))
         {
             promptView?.Hide();
             return;
         }
 
-        GUIManager guiManager = GUIManager.instance;
         if (guiManager == null)
         {
             promptView?.Hide();

@@ -6,7 +6,7 @@ internal enum PeakDummyToolsTextKey
 {
     DummyPlayerNameFormat,
     SwitchControlToDummy,
-    SwitchControlToHost,
+    SwitchControlToOriginal,
 }
 
 internal static class PeakDummyToolsLocalization
@@ -22,7 +22,7 @@ internal static class PeakDummyToolsLocalization
         {
             [PeakDummyToolsTextKey.DummyPlayerNameFormat] = "dummy{0}",
             [PeakDummyToolsTextKey.SwitchControlToDummy] = "Switch control",
-            [PeakDummyToolsTextKey.SwitchControlToHost] = "Return control",
+            [PeakDummyToolsTextKey.SwitchControlToOriginal] = "Return control",
         };
 
     private static readonly IReadOnlyDictionary<PeakDummyToolsTextKey, string> ChineseText =
@@ -30,7 +30,7 @@ internal static class PeakDummyToolsLocalization
         {
             [PeakDummyToolsTextKey.DummyPlayerNameFormat] = "假人{0}",
             [PeakDummyToolsTextKey.SwitchControlToDummy] = "切换操控",
-            [PeakDummyToolsTextKey.SwitchControlToHost] = "切回本体",
+            [PeakDummyToolsTextKey.SwitchControlToOriginal] = "切回本体",
         };
 
     internal static string Format(PeakDummyToolsTextKey key, params object[] args)
