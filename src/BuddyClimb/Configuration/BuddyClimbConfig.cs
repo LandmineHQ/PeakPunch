@@ -1,21 +1,19 @@
 using System;
 using System.IO;
+using System.Threading;
 using BepInEx.Configuration;
-using UnityEngine;
 
 namespace BuddyClimb.Configuration;
 
 internal static class BuddyClimbConfig
 {
-    private const float HotReloadDebounceSeconds = 0.25f;
+    private const int HotReloadDebounceMilliseconds = 250;
 
     private static readonly object HotReloadLock = new();
 
     private static FileSystemWatcher? configWatcher;
     private static ConfigFile? configFile;
-    private static bool reloadRequested;
-    private static bool reloadScheduled;
-    private static float reloadAfterTime;
+    private static Timer? reloadTimer;
 
     internal static ConfigEntry<bool> EnableBackpackTransfer { get; private set; } = null!;
 
@@ -41,6 +39,7 @@ internal static class BuddyClimbConfig
             return;
         }
 
+        reloadTimer = new Timer(ReloadConfigFromTimer);
         configWatcher = new FileSystemWatcher(configDirectory, configFileName)
         {
             IncludeSubdirectories = false,
@@ -52,39 +51,49 @@ internal static class BuddyClimbConfig
 
         configWatcher.Changed += OnConfigFileChanged;
         configWatcher.Created += OnConfigFileChanged;
-        configWatcher.Renamed += OnConfigFileRenamed;
+        configWatcher.Renamed += OnConfigFileChanged;
         configWatcher.EnableRaisingEvents = true;
     }
 
-    internal static void ReloadIfChanged()
+    internal static void DisableHotReload()
     {
-        ConfigFile? currentConfig = configFile;
-        if (currentConfig == null)
+        if (configWatcher != null)
         {
-            return;
+            configWatcher.EnableRaisingEvents = false;
+            configWatcher.Changed -= OnConfigFileChanged;
+            configWatcher.Created -= OnConfigFileChanged;
+            configWatcher.Renamed -= OnConfigFileChanged;
+            configWatcher.Dispose();
+            configWatcher = null;
         }
 
         lock (HotReloadLock)
         {
-            if (!reloadRequested)
-            {
-                return;
-            }
+            reloadTimer?.Dispose();
+            reloadTimer = null;
+            configFile = null;
+        }
+    }
 
-            if (!reloadScheduled)
-            {
-                reloadScheduled = true;
-                reloadAfterTime = Time.unscaledTime + HotReloadDebounceSeconds;
-                return;
-            }
+    private static void OnConfigFileChanged(object sender, FileSystemEventArgs args)
+    {
+        lock (HotReloadLock)
+        {
+            reloadTimer?.Change(HotReloadDebounceMilliseconds, Timeout.Infinite);
+        }
+    }
 
-            if (Time.unscaledTime < reloadAfterTime)
-            {
-                return;
-            }
+    private static void ReloadConfigFromTimer(object? state)
+    {
+        ConfigFile? currentConfig;
+        lock (HotReloadLock)
+        {
+            currentConfig = configFile;
+        }
 
-            reloadRequested = false;
-            reloadScheduled = false;
+        if (currentConfig == null)
+        {
+            return;
         }
 
         try
@@ -95,44 +104,6 @@ internal static class BuddyClimbConfig
         catch (Exception ex)
         {
             Plugin.Log.LogWarning($"Failed to reload BuddyClimb config: {ex.Message}");
-        }
-    }
-
-    internal static void DisableHotReload()
-    {
-        if (configWatcher != null)
-        {
-            configWatcher.EnableRaisingEvents = false;
-            configWatcher.Changed -= OnConfigFileChanged;
-            configWatcher.Created -= OnConfigFileChanged;
-            configWatcher.Renamed -= OnConfigFileRenamed;
-            configWatcher.Dispose();
-            configWatcher = null;
-        }
-
-        lock (HotReloadLock)
-        {
-            reloadRequested = false;
-            reloadScheduled = false;
-        }
-    }
-
-    private static void OnConfigFileChanged(object sender, FileSystemEventArgs args)
-    {
-        RequestReload();
-    }
-
-    private static void OnConfigFileRenamed(object sender, RenamedEventArgs args)
-    {
-        RequestReload();
-    }
-
-    private static void RequestReload()
-    {
-        lock (HotReloadLock)
-        {
-            reloadRequested = true;
-            reloadScheduled = false;
         }
     }
 }

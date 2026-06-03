@@ -35,7 +35,6 @@ public partial class Plugin : BaseUnityPlugin
 
     private void Update()
     {
-        BuddyClimbConfig.ReloadIfChanged();
         CarriedPlayerDropper.Update();
     }
 

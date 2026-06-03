@@ -4,7 +4,7 @@
 
 - This repository contains PEAK BepInEx mods rebuilt from the PEAKModding BepInEx template.
 - Gameplay mod name: `BuddyClimb`.
-- Gameplay plugin GUID and assembly name: `com.github.LandmineHQ.PeakPunch`.
+- Gameplay plugin GUID and assembly name: `com.github.LandmineHQ.BuddyClimb`.
 - Tooling mod name: `PeakDummyTools`.
 - Tooling plugin GUID and assembly name: `com.github.LandmineHQ.PeakDummyTools`.
 - Experimental optimization mod name: `PeakPlayerLOD`.
@@ -24,7 +24,7 @@
 - Use `scripts/build.ps1` for local validation. The script requires `Config.Build.user.props` and relies on its MSBuild properties instead of shell environment variables.
 - Debug validation: `.\scripts\build.ps1`
 - Release packaging validation: `.\scripts\build.ps1 -Configuration Release`
-- Normal solution builds should produce three DLLs: `com.github.LandmineHQ.PeakPunch.dll`, `com.github.LandmineHQ.PeakDummyTools.dll`, and `com.github.LandmineHQ.PeakPlayerLOD.dll`.
+- Normal solution builds should produce three DLLs: `com.github.LandmineHQ.BuddyClimb.dll`, `com.github.LandmineHQ.PeakDummyTools.dll`, and `com.github.LandmineHQ.PeakPlayerLOD.dll`.
 - Pass `-Deploy` only when intentionally copying the built DLL into the local BepInEx directory. The script disables deployment by default even if the local props file enables it.
 - Release package output is under `artifacts/thunderstore/release/`. `BuddyClimb` is Thunderstore-packable; `PeakDummyTools` and `PeakPlayerLOD` are local DLLs and are not packed unless their project metadata is intentionally changed.
 - `artifacts/` is build output and should not be committed.
@@ -37,7 +37,7 @@
 - Harmony comes from the template's NuGet dependency (`HarmonyX` `2.9.0`). Do not copy Harmony assemblies from old build outputs, and do not upgrade HarmonyX unless there is a concrete compatibility reason.
 - The primary gameplay hook is `CharacterInteractiblePatch`.
 - `BuddyClimbConfig` owns gameplay config entries. `EnableBackpackTransfer` defaults to false; when false, carrier backpacks still block BuddyClimb interactions.
-- `BuddyClimbConfig` runtime config hot reload uses `FileSystemWatcher` to mark the config as dirty, then calls this mod's `Config.Reload()` on Unity's main thread from `Plugin.Update()`. Do not replace this with fixed-interval file polling.
+- `BuddyClimbConfig` runtime config hot reload uses `FileSystemWatcher` callbacks with a debounced timer to call this mod's `Config.Reload()`. Config edits apply without restarting the game. Do not add `Plugin.Update()` dirty polling or fixed-interval file polling.
 - The climb prompt must go through `BuddyClimbLocalization`; do not hardcode player-facing prompt text in patches.
 - Use a distinct `BuddyClimbTextKey` for each full prompt. Do not build player-facing prompt variants by concatenating localized fragments.
 - Current localization supports English plus Simplified/Traditional Chinese, with unsupported languages falling back to English.
@@ -50,13 +50,14 @@
 - When `EnableBackpackTransfer` is true and the carrier has a backpack, move the carrier's backpack to the carried player during BuddyClimb carry start. If the carried player already has a backpack, create the dropped backpack from a snapshot of the carried player's backpack slot, immediately clear that slot, then move the carrier's backpack in the same interaction. Do not restore the transferred backpack to the carrier on drop.
 - BuddyClimb climb interactions must not call the vanilla `RPCA_PassOut`; carried players should remain conscious. Send `RPCA_StartCarry` directly from the carrier's `PhotonView`, and let `CharacterCarryingPatch` apply `isCarried`, `carrier`, and `carriedPlayer`. Avoid `CharacterCarrying.StartCarry()` when the direct RPC path is needed because PEAK initializes its private `character` field in `Start()`.
 - `PeakDummyTools` settings use BepInEx `Config.Bind` in `PeakDummyToolsConfig`.
-- `PeakDummyTools` runtime config hot reload uses `FileSystemWatcher` to mark the config as dirty, then calls that mod's `Config.Reload()` on Unity's main thread from `Plugin.Update()`. Do not replace this with fixed-interval file polling.
+- `PeakDummyTools` runtime config hot reload uses `FileSystemWatcher` callbacks with a debounced timer to call that mod's `Config.Reload()`. Do not add `Plugin.Update()` dirty polling or fixed-interval file polling.
 - Dummy player spawning is host-only. It creates a marked test `Character` at the local player's center position; the `Character.Awake` patch must temporarily mark this instance as a bot before PEAK's original player registration runs, or the host player's real `Character` can be disabled by `PlayerHandler.RegisterCharacter`.
 - Dummy characters cannot be real Photon room players. Keep their identity isolated with `PeakDummyTools`' synthetic local `Player` mapping, `Character.player` / `Player.character` / `NetworkingUtilities` patches, and UI name handling so they never resolve to the host player.
 - Dummy names are generated through `PeakDummyToolsLocalization` and should remain incrementing and localized. Do not rely on `gameObject.name` alone, because PEAK resets names in `Character.Start`.
 - Dummy spawning defaults to `LeftAlt+G`. Dummy control switching defaults to `LeftAlt+T`, is host-only, and switches `Character.localCharacter`, local `Player.character`, and the local actor's `PlayerHandler` character lookup to the targeted dummy without moving either character. Pressing the switch shortcut while controlling a dummy and targeting the original host character, or with no dummy target, returns control to the host character.
 - Dummy control switching should show its own `Alt + T` interaction prompt row from the UI layer. Do not append this text through `CharacterInteractible.GetInteractionText`, because that reuses PEAK's normal `E` interaction slot.
 - `PeakPlayerLOD` owns experimental player visual LOD/model optimization. Keep it isolated from BuddyClimb and PeakDummyTools so crashes or visual regressions can be disabled by removing only that DLL.
+- `PeakPlayerLOD` runtime config hot reload uses `FileSystemWatcher` callbacks with a debounced timer to call that mod's `Config.Reload()`. Do not add `Plugin.Update()` dirty polling or fixed-interval file polling.
 - `PeakPlayerLOD` should avoid disabling root `Character`, `PhotonView`, colliders, animation/IK components, or interaction components. Prefer renderer-only experiments plus explicit cleanup that restores renderer state.
 - `PeakPlayerLOD` keeps the nearest configured non-local players on their original renderers and represents farther non-local players with a skin-only renderer proxy on the original character: keep the base skin/body and face expression renderers, hide clothing, hats, accessories, shadows, chicken, skeleton, and other cosmetic renderers. Do not create separate mesh proxy objects for this mode.
 - `PeakPlayerLOD` LOD transitions use `PlayerVisualLodSwitchDebounceSeconds` so players near the full-detail boundary do not rapidly toggle renderer states.

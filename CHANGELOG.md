@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.8
+
+- Corrected BuddyClimb's assembly/config identity to `com.github.LandmineHQ.BuddyClimb`.
+- Switched all mod config hot reload paths from `Update()` polling to debounced `FileSystemWatcher` callbacks.
+- Documented that BuddyClimb config changes apply without restarting the game.
+
 ## 0.1.5
 
 - Added a carried-player interaction proxy for all carry states so `isCarried` targets can be hit directly by PEAK's interaction raycasts.

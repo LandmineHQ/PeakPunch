@@ -29,7 +29,6 @@ public sealed class Plugin : BaseUnityPlugin
 
     private void Update()
     {
-        PeakPlayerLodConfig.ReloadIfChanged();
         PlayerVisualLodManager.Update();
     }
 

@@ -29,7 +29,6 @@ public sealed class Plugin : BaseUnityPlugin
 
     private void Update()
     {
-        PeakDummyToolsConfig.ReloadIfChanged();
         DummyPlayerSpawner.Update();
         DummyControlSwitcher.Update();
     }
