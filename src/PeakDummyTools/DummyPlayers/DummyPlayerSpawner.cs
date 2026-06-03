@@ -25,6 +25,8 @@ internal static class DummyPlayerSpawner
     private const int RandomCustomizationAttempts = 8;
 
     private static readonly HashSet<int> DummySpawnedViewIds = [];
+    private static readonly Queue<int> LocallySpawnedDummyViewIds = [];
+    private static readonly HashSet<int> LocallySpawnedDummyViewIdSet = [];
     private static readonly Dictionary<int, DummyPlayerRecord> DummyPlayersByCharacterViewId = [];
     private static readonly Dictionary<Player, int> DummyCharacterViewIdsByPlayer = [];
     private static readonly FieldInfo PlayerViewField = AccessTools.Field(typeof(Player), "view");
@@ -134,6 +136,7 @@ internal static class DummyPlayerSpawner
 
         int viewId = character.photonView.ViewID;
         DummySpawnedViewIds.Remove(viewId);
+        LocallySpawnedDummyViewIdSet.Remove(viewId);
         if (!DummyPlayersByCharacterViewId.TryGetValue(viewId, out DummyPlayerRecord record))
         {
             return;
@@ -149,7 +152,7 @@ internal static class DummyPlayerSpawner
 
     internal static bool TryDestroyDummyPlayer(Character character)
     {
-        if (character == null || character.photonView == null || !IsDummyPlayer(character))
+        if (character == null || character.photonView == null || !IsLocallySpawnedDummyPlayer(character))
         {
             return false;
         }
@@ -172,6 +175,45 @@ internal static class DummyPlayerSpawner
 
         Plugin.Log.LogInfo($"Deleted dummy player {characterName}.");
         return true;
+    }
+
+    internal static bool TryDestroyQueuedDummyPlayer()
+    {
+        while (LocallySpawnedDummyViewIds.Count > 0)
+        {
+            int viewId = LocallySpawnedDummyViewIds.Dequeue();
+            if (!LocallySpawnedDummyViewIdSet.Contains(viewId))
+            {
+                continue;
+            }
+
+            PhotonView photonView = PhotonView.Find(viewId);
+            Character? character = photonView != null
+                ? photonView.GetComponent<Character>()
+                : null;
+            if (character == null)
+            {
+                LocallySpawnedDummyViewIdSet.Remove(viewId);
+                continue;
+            }
+
+            if (TryDestroyDummyPlayer(character))
+            {
+                return true;
+            }
+
+            LocallySpawnedDummyViewIdSet.Remove(viewId);
+        }
+
+        return false;
+    }
+
+    internal static bool IsLocallySpawnedDummyPlayer(Character character)
+    {
+        return character != null
+            && character.photonView != null
+            && LocallySpawnedDummyViewIdSet.Contains(character.photonView.ViewID)
+            && IsDummyPlayer(character);
     }
 
     internal static bool TryGetDummyPlayer(Character character, out Player player)
@@ -332,8 +374,21 @@ internal static class DummyPlayerSpawner
         }
 
         ConfigureDummyPlayer(spawnedCharacter, localCharacter, playerHandler, localActorNumber);
+        TrackLocallySpawnedDummy(spawnedCharacter);
         spawnedCharacter.photonView.RPC("WarpPlayerRPC", RpcTarget.All, spawnPosition, false);
         Plugin.Log.LogInfo($"Spawned dummy player at {spawnPosition}.");
+    }
+
+    private static void TrackLocallySpawnedDummy(Character character)
+    {
+        if (character == null || character.photonView == null)
+        {
+            return;
+        }
+
+        int viewId = character.photonView.ViewID;
+        LocallySpawnedDummyViewIds.Enqueue(viewId);
+        LocallySpawnedDummyViewIdSet.Add(viewId);
     }
 
     private static void ConfigureDummyPlayer(
