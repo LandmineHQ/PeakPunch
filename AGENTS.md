@@ -26,6 +26,7 @@
 - Debug validation: `.\scripts\build.ps1 debug`
 - Release packaging validation: `.\scripts\build.ps1 release`
 - Thunderstore publish validation/push: `.\scripts\build.ps1 push`. This runs Release with `-p:PublishTS=true` and requires the local Thunderstore token setup from `Config.Build.user.props`.
+- On Windows, `push` mode requires Administrator PowerShell; the script relaunches itself with UAC elevation when the current process is not elevated.
 - The build script passes verbosity as `dotnet build -v <Verbosity>` and defaults to `minimal`; use `-Verbosity d` to match the PEAKModding packaging docs' detailed output. It does not override `DeployModFiles`; set deployment behavior in `Config.Build.user.props`.
 - Normal solution builds should produce three DLLs: `com.github.LandmineHQ.BuddyClimb.dll`, `com.github.LandmineHQ.PeakDummyTools.dll`, and `com.github.LandmineHQ.PeakPlayerLOD.dll`.
 - Release package output is under `artifacts/thunderstore/release/`. `BuddyClimb` is Thunderstore-packable; `PeakDummyTools` and `PeakPlayerLOD` are local DLLs and are not packed unless their project metadata is intentionally changed.
