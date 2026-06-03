@@ -100,12 +100,8 @@
   >
     <PropertyGroup>
       <ThunderstoreTeamTokenKey>service thunderstore team $(ThunderstoreTeam)</ThunderstoreTeamTokenKey>
-      <CommandGetSecret Condition="$([MSBuild]::IsOSPlatform('Linux'))"
-        >secret-tool lookup $(ThunderstoreTeamTokenKey)</CommandGetSecret
-      >
-      <CommandGetSecret Condition="$([MSBuild]::IsOSPlatform('Windows'))"
-        >powershell -Command "(Get-StoredCredential -Target '$(ThunderstoreTeamTokenKey)' -AsCredentialObject).Password"</CommandGetSecret
-      >
+      <CommandGetSecret Condition="$([MSBuild]::IsOSPlatform('Linux'))">secret-tool lookup $(ThunderstoreTeamTokenKey)</CommandGetSecret>
+      <CommandGetSecret Condition="$([MSBuild]::IsOSPlatform('Windows'))">powershell.exe -NoProfile -Command "&amp; { Import-Module CredentialManager; (Get-StoredCredential -Target '$(ThunderstoreTeamTokenKey)' -AsCredentialObject).Password }"</CommandGetSecret>
     </PropertyGroup>
     <Exec
       Command="$(CommandGetSecret)"

@@ -6,7 +6,8 @@
 - Switched all mod config hot reload paths from `Update()` polling to debounced `FileSystemWatcher` callbacks.
 - Documented that BuddyClimb config changes apply without restarting the game.
 - Updated the local build script to support `debug`, `release`, and `push` modes without overriding `DeployModFiles`.
-- Made `push` mode request Administrator PowerShell on Windows before publishing to Thunderstore.
+- Kept `push` mode in the current PowerShell process instead of requesting UAC elevation.
+- Fixed the Thunderstore token lookup command in `Config.Build.user.props.template` so MSBuild does not split it across lines.
 
 ## 0.1.6
 
