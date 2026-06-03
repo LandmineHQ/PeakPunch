@@ -22,6 +22,8 @@ internal static class PeakDummyToolsConfig
 
     internal static ConfigEntry<KeyboardShortcut> SwitchControlShortcut { get; private set; } = null!;
 
+    internal static ConfigEntry<KeyboardShortcut> DeleteDummyShortcut { get; private set; } = null!;
+
     internal static void Bind(ConfigFile config)
     {
         EnableDummyTools = config.Bind(
@@ -41,6 +43,12 @@ internal static class PeakDummyToolsConfig
             "SwitchControlShortcut",
             new KeyboardShortcut(KeyCode.T, KeyCode.LeftAlt),
             "When dummy tools are enabled, the local client can press this shortcut while targeting an owned dummy player to control it. Press again with no dummy target to return to the original local character.");
+
+        DeleteDummyShortcut = config.Bind(
+            "Dummy Control",
+            "DeleteDummyShortcut",
+            new KeyboardShortcut(KeyCode.D, KeyCode.LeftAlt),
+            "When dummy tools are enabled, the local client can press this shortcut while targeting an owned dummy player to delete it.");
     }
 
     internal static void EnableHotReload(ConfigFile config)

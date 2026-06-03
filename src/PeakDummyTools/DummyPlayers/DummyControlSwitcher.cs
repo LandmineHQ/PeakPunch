@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Reflection;
+using BepInEx.Configuration;
 using HarmonyLib;
 using PeakDummyTools.Configuration;
 using PeakDummyTools.Localization;
@@ -39,6 +40,12 @@ internal static class DummyControlSwitcher
         }
 
         CaptureOriginalLocalCharacterIfAvailable();
+
+        if (PeakDummyToolsConfig.DeleteDummyShortcut.Value.IsDown())
+        {
+            DeleteFromShortcut();
+            return;
+        }
 
         if (!PeakDummyToolsConfig.SwitchControlShortcut.Value.IsDown())
         {
@@ -92,6 +99,25 @@ internal static class DummyControlSwitcher
         return TryGetSwitchPrompt(characterInteractible.character, out keyText, out text);
     }
 
+    internal static bool TryGetCurrentHoveredDeletePrompt(out string keyText, out string text)
+    {
+        keyText = string.Empty;
+        text = string.Empty;
+
+        Interaction interaction = Interaction.instance;
+        if (interaction?.currentHovered is not CharacterInteractible characterInteractible)
+        {
+            return false;
+        }
+
+        return TryGetDeletePrompt(characterInteractible.character, out keyText, out text);
+    }
+
+    internal static bool CanShowHoveredPrompt(Character character)
+    {
+        return CanShowSwitchPrompt(character) || CanDeleteDummy(character);
+    }
+
     internal static bool CanShowSwitchPrompt(Character character)
     {
         if (!CanUseDummyControl() || character == null || character == Character.localCharacter)
@@ -107,6 +133,16 @@ internal static class DummyControlSwitcher
         }
 
         return IsControllingDummy() && originalLocalCharacter != null && character == originalLocalCharacter;
+    }
+
+    internal static bool CanDeleteDummy(Character character)
+    {
+        return CanUseDummyControl()
+            && character != null
+            && character != Character.localCharacter
+            && character.photonView != null
+            && character.photonView.IsMine
+            && DummyPlayerSpawner.IsDummyPlayer(character);
     }
 
     internal static void HandleCharacterRemoved(Character character)
@@ -146,9 +182,34 @@ internal static class DummyControlSwitcher
         PeakDummyToolsTextKey textKey = DummyPlayerSpawner.IsDummyPlayer(character)
             ? PeakDummyToolsTextKey.SwitchControlToDummy
             : PeakDummyToolsTextKey.SwitchControlToOriginal;
-        keyText = GetShortcutText();
+        keyText = GetShortcutText(PeakDummyToolsConfig.SwitchControlShortcut.Value);
         text = PeakDummyToolsLocalization.Get(textKey);
         return true;
+    }
+
+    private static bool TryGetDeletePrompt(Character character, out string keyText, out string text)
+    {
+        keyText = string.Empty;
+        text = string.Empty;
+        if (!CanDeleteDummy(character))
+        {
+            return false;
+        }
+
+        keyText = GetShortcutText(PeakDummyToolsConfig.DeleteDummyShortcut.Value);
+        text = PeakDummyToolsLocalization.Get(PeakDummyToolsTextKey.DeleteDummy);
+        return true;
+    }
+
+    private static void DeleteFromShortcut()
+    {
+        if (!TryGetDeleteTarget(out Character target))
+        {
+            Plugin.Log.LogWarning("No deletable dummy target is currently selected.");
+            return;
+        }
+
+        DummyPlayerSpawner.TryDestroyDummyPlayer(target);
     }
 
     private static void SwitchFromShortcut()
@@ -188,7 +249,32 @@ internal static class DummyControlSwitcher
         return TryFindLookTarget(out target);
     }
 
+    private static bool TryGetDeleteTarget(out Character target)
+    {
+        target = null!;
+
+        if (!CanUseDummyControl())
+        {
+            return false;
+        }
+
+        Interaction interaction = Interaction.instance;
+        if (interaction?.currentHovered is CharacterInteractible characterInteractible
+            && CanDeleteDummy(characterInteractible.character))
+        {
+            target = characterInteractible.character;
+            return true;
+        }
+
+        return TryFindLookTarget(out target, CanDeleteDummy);
+    }
+
     private static bool TryFindLookTarget(out Character target)
+    {
+        return TryFindLookTarget(out target, CanShowSwitchPrompt);
+    }
+
+    private static bool TryFindLookTarget(out Character target, System.Func<Character, bool> canUseCandidate)
     {
         target = null!;
         Character localCharacter = Character.localCharacter;
@@ -207,7 +293,7 @@ internal static class DummyControlSwitcher
 
         foreach (Character candidate in Character.AllCharacters)
         {
-            if (!CanShowSwitchPrompt(candidate))
+            if (!canUseCandidate(candidate))
             {
                 continue;
             }
@@ -483,10 +569,10 @@ internal static class DummyControlSwitcher
             && PhotonNetwork.InRoom;
     }
 
-    private static string GetShortcutText()
+    private static string GetShortcutText(KeyboardShortcut shortcut)
     {
         List<string> keys = [];
-        foreach (KeyCode modifier in PeakDummyToolsConfig.SwitchControlShortcut.Value.Modifiers)
+        foreach (KeyCode modifier in shortcut.Modifiers)
         {
             string modifierText = FormatKey(modifier);
             if (!string.IsNullOrEmpty(modifierText))
@@ -495,7 +581,7 @@ internal static class DummyControlSwitcher
             }
         }
 
-        string mainKeyText = FormatKey(PeakDummyToolsConfig.SwitchControlShortcut.Value.MainKey);
+        string mainKeyText = FormatKey(shortcut.MainKey);
         if (!string.IsNullOrEmpty(mainKeyText))
         {
             keys.Add(mainKeyText);

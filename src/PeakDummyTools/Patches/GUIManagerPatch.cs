@@ -73,6 +73,8 @@ internal static class GUIManagerPatch
         bool secondaryInteractible = false;
         string primaryText = interactible.GetInteractionText() ?? string.Empty;
         string secondaryText = string.Empty;
+        string switchPromptText = string.Empty;
+        string deletePromptText = string.Empty;
 
         if (interactible is CharacterInteractible characterInteractible)
         {
@@ -82,6 +84,16 @@ internal static class GUIManagerPatch
             {
                 secondaryText = characterInteractible.GetSecondaryInteractionText() ?? string.Empty;
             }
+
+            if (DummyControlSwitcher.TryGetCurrentHoveredSwitchPrompt(out string switchKeyText, out string switchLabelText))
+            {
+                switchPromptText = $"{switchKeyText}\n{switchLabelText}";
+            }
+
+            if (DummyControlSwitcher.TryGetCurrentHoveredDeletePrompt(out string deleteKeyText, out string deleteLabelText))
+            {
+                deletePromptText = $"{deleteKeyText}\n{deleteLabelText}";
+            }
         }
 
         promptState = new PromptState(
@@ -89,7 +101,9 @@ internal static class GUIManagerPatch
             primaryInteractible,
             secondaryInteractible,
             primaryText,
-            secondaryText);
+            secondaryText,
+            switchPromptText,
+            deletePromptText);
         return true;
     }
 
@@ -100,19 +114,25 @@ internal static class GUIManagerPatch
         private readonly bool secondaryInteractible;
         private readonly string primaryText;
         private readonly string secondaryText;
+        private readonly string switchPromptText;
+        private readonly string deletePromptText;
 
         internal PromptState(
             IInteractible interactible,
             bool primaryInteractible,
             bool secondaryInteractible,
             string primaryText,
-            string secondaryText)
+            string secondaryText,
+            string switchPromptText,
+            string deletePromptText)
         {
             this.interactible = interactible;
             this.primaryInteractible = primaryInteractible;
             this.secondaryInteractible = secondaryInteractible;
             this.primaryText = primaryText;
             this.secondaryText = secondaryText;
+            this.switchPromptText = switchPromptText;
+            this.deletePromptText = deletePromptText;
         }
 
         public bool Equals(PromptState other)
@@ -121,7 +141,9 @@ internal static class GUIManagerPatch
                 && primaryInteractible == other.primaryInteractible
                 && secondaryInteractible == other.secondaryInteractible
                 && primaryText == other.primaryText
-                && secondaryText == other.secondaryText;
+                && secondaryText == other.secondaryText
+                && switchPromptText == other.switchPromptText
+                && deletePromptText == other.deletePromptText;
         }
     }
 }

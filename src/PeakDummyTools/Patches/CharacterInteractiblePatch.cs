@@ -15,7 +15,7 @@ internal static class CharacterInteractiblePatch
             return;
         }
 
-        if (DummyControlSwitcher.CanShowSwitchPrompt(__instance.character))
+        if (DummyControlSwitcher.CanShowHoveredPrompt(__instance.character))
         {
             __result = true;
         }

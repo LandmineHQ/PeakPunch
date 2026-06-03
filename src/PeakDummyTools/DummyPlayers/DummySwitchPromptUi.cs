@@ -12,7 +12,8 @@ internal static class DummySwitchPromptUi
     private const float PromptSpacing = 8f;
     private const float ManualVerticalGap = 4f;
 
-    private static SwitchPromptView? promptView;
+    private static SwitchPromptView? switchPromptView;
+    private static SwitchPromptView? deletePromptView;
     private static GUIManager? sourceGuiManager;
 
     internal static void RefreshAfterNativePrompt(GUIManager guiManager)
@@ -22,37 +23,67 @@ internal static class DummySwitchPromptUi
 
     private static void UpdatePrompt(GUIManager guiManager)
     {
-        if (!DummyControlSwitcher.TryGetCurrentHoveredSwitchPrompt(out string keyText, out string labelText))
-        {
-            promptView?.Hide();
-            return;
-        }
-
         if (guiManager == null)
         {
-            promptView?.Hide();
+            HideAll();
             return;
         }
 
-        SwitchPromptView? view = EnsurePromptView(guiManager);
+        if (sourceGuiManager != null && sourceGuiManager != guiManager)
+        {
+            DestroyAll();
+        }
+
+        sourceGuiManager = guiManager;
+        int customRowIndex = 0;
+
+        if (DummyControlSwitcher.TryGetCurrentHoveredSwitchPrompt(out string switchKeyText, out string switchLabelText))
+        {
+            ShowPrompt(guiManager, ref switchPromptView, "PeakDummyTools Switch Control Prompt", switchKeyText, switchLabelText, customRowIndex);
+            customRowIndex++;
+        }
+        else
+        {
+            switchPromptView?.Hide();
+        }
+
+        if (DummyControlSwitcher.TryGetCurrentHoveredDeletePrompt(out string deleteKeyText, out string deleteLabelText))
+        {
+            ShowPrompt(guiManager, ref deletePromptView, "PeakDummyTools Delete Dummy Prompt", deleteKeyText, deleteLabelText, customRowIndex);
+        }
+        else
+        {
+            deletePromptView?.Hide();
+        }
+    }
+
+    private static void ShowPrompt(
+        GUIManager guiManager,
+        ref SwitchPromptView? promptView,
+        string promptName,
+        string keyText,
+        string labelText,
+        int customRowIndex)
+    {
+        SwitchPromptView? view = EnsurePromptView(guiManager, promptView, promptName);
         if (view == null)
         {
             return;
         }
 
-        view.Show(keyText, labelText);
+        promptView = view;
+        view.Show(keyText, labelText, customRowIndex);
     }
 
-    private static SwitchPromptView? EnsurePromptView(GUIManager guiManager)
+    private static SwitchPromptView? EnsurePromptView(
+        GUIManager guiManager,
+        SwitchPromptView? promptView,
+        string promptName)
     {
-        if (promptView is { IsValid: true } && sourceGuiManager == guiManager)
+        if (promptView is { IsValid: true })
         {
             return promptView;
         }
-
-        promptView?.Destroy();
-        promptView = null;
-        sourceGuiManager = null;
 
         if (!TryGetTemplate(guiManager, out GameObject template, out TMP_Text sourceLabel))
         {
@@ -62,7 +93,7 @@ internal static class DummySwitchPromptUi
         try
         {
             GameObject promptRow = Object.Instantiate(template, template.transform.parent);
-            promptRow.name = "PeakDummyTools Switch Control Prompt";
+            promptRow.name = promptName;
             promptRow.SetActive(false);
 
             SwitchPromptView? view = ConfigureClonedPromptRow(guiManager, promptRow, template, sourceLabel);
@@ -72,8 +103,6 @@ internal static class DummySwitchPromptUi
                 return null;
             }
 
-            sourceGuiManager = guiManager;
-            promptView = view;
             return view;
         }
         catch (System.Exception ex)
@@ -81,6 +110,21 @@ internal static class DummySwitchPromptUi
             Plugin.Log.LogWarning($"Failed to clone PEAK interaction prompt UI: {ex.Message}");
             return null;
         }
+    }
+
+    private static void HideAll()
+    {
+        switchPromptView?.Hide();
+        deletePromptView?.Hide();
+    }
+
+    private static void DestroyAll()
+    {
+        switchPromptView?.Destroy();
+        deletePromptView?.Destroy();
+        switchPromptView = null;
+        deletePromptView = null;
+        sourceGuiManager = null;
     }
 
     private static bool TryGetTemplate(GUIManager guiManager, out GameObject template, out TMP_Text sourceLabel)
@@ -385,7 +429,7 @@ internal static class DummySwitchPromptUi
             && labelText != null
             && rootRect != null;
 
-        internal void Show(string key, string label)
+        internal void Show(string key, string label, int customRowIndex)
         {
             if (!IsValid)
             {
@@ -394,7 +438,7 @@ internal static class DummySwitchPromptUi
 
             keyText.text = key;
             labelText.text = label;
-            PlaceAfterNativePrompts();
+            PlaceAfterNativePrompts(customRowIndex);
             if (!root.activeSelf)
             {
                 root.SetActive(true);
@@ -417,7 +461,7 @@ internal static class DummySwitchPromptUi
             }
         }
 
-        internal void PlaceAfterNativePrompts()
+        internal void PlaceAfterNativePrompts(int customRowIndex = 0)
         {
             if (!IsValid)
             {
@@ -431,7 +475,7 @@ internal static class DummySwitchPromptUi
             int siblingIndex = GetLastNativePromptSiblingIndex(parent, primary, secondary, hold);
             if (siblingIndex >= 0)
             {
-                root.transform.SetSiblingIndex(siblingIndex + 1);
+                root.transform.SetSiblingIndex(siblingIndex + 1 + customRowIndex);
             }
 
             if (parent != null && parent.GetComponent<LayoutGroup>() != null)
@@ -439,7 +483,7 @@ internal static class DummySwitchPromptUi
                 return;
             }
 
-            UpdateManualPosition(primary, secondary, hold);
+            UpdateManualPosition(primary, secondary, hold, customRowIndex);
         }
 
         private static int GetLastNativePromptSiblingIndex(
@@ -460,7 +504,7 @@ internal static class DummySwitchPromptUi
             return siblingIndex;
         }
 
-        private void UpdateManualPosition(GameObject? primary, GameObject? secondary, GameObject? hold)
+        private void UpdateManualPosition(GameObject? primary, GameObject? secondary, GameObject? hold, int customRowIndex)
         {
             RectTransform? primaryRect = primary != null ? primary.GetComponent<RectTransform>() : null;
             RectTransform? secondaryRect = secondary != null ? secondary.GetComponent<RectTransform>() : null;
@@ -472,13 +516,16 @@ internal static class DummySwitchPromptUi
                 if (primaryRect != null)
                 {
                     CopyRectPlacement(primaryRect, rootRect);
+                    rootRect.anchoredPosition = primaryRect.anchoredPosition
+                        + GetPromptStep(primaryRect, secondaryRect, holdRect, primaryRect) * customRowIndex;
                 }
 
                 return;
             }
 
             CopyRectPlacement(activeBase, rootRect);
-            rootRect.anchoredPosition = activeBase.anchoredPosition + GetPromptStep(primaryRect, secondaryRect, holdRect, activeBase);
+            rootRect.anchoredPosition = activeBase.anchoredPosition
+                + GetPromptStep(primaryRect, secondaryRect, holdRect, activeBase) * (customRowIndex + 1);
         }
 
         private static RectTransform? GetActiveBasePrompt(GameObject? primary, GameObject? secondary, GameObject? hold)

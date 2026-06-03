@@ -147,6 +147,33 @@ internal static class DummyPlayerSpawner
         }
     }
 
+    internal static bool TryDestroyDummyPlayer(Character character)
+    {
+        if (character == null || character.photonView == null || !IsDummyPlayer(character))
+        {
+            return false;
+        }
+
+        if (!character.photonView.IsMine)
+        {
+            Plugin.Log.LogWarning($"Cannot delete dummy player {character.characterName} because this client does not own it.");
+            return false;
+        }
+
+        string characterName = character.characterName;
+        if (PhotonNetwork.InRoom)
+        {
+            PhotonNetwork.Destroy(character.gameObject);
+        }
+        else
+        {
+            Object.Destroy(character.gameObject);
+        }
+
+        Plugin.Log.LogInfo($"Deleted dummy player {characterName}.");
+        return true;
+    }
+
     internal static bool TryGetDummyPlayer(Character character, out Player player)
     {
         player = null!;

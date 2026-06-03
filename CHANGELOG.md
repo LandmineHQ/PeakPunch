@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.8
+
+- You can climb the player when thery holding someting whatever.
+
 ## 0.1.7
 
 - Corrected BuddyClimb's assembly/config identity to `com.github.LandmineHQ.BuddyClimb`.
