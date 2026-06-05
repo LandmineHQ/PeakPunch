@@ -3,5 +3,6 @@
     <Project Path="src/BuddyClimb/BuddyClimb.csproj" />
     <Project Path="src/PeakDummyTools/PeakDummyTools.csproj" />
     <Project Path="src/PeakPlayerLOD/PeakPlayerLOD.csproj" />
+    <Project Path="src/PeakRoutePlanner/PeakRoutePlanner.csproj" />
   </Folder>
 </Solution>
