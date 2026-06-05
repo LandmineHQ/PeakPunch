@@ -147,6 +147,8 @@ internal static class DummyControlSwitcher
             return;
         }
 
+        DummyControlPhotonViewAuthority.HandleCharacterRemoved(character);
+
         if (character == originalLocalCharacter)
         {
             originalLocalCharacter = null;
@@ -163,6 +165,13 @@ internal static class DummyControlSwitcher
             AssignLocalControl(originalLocal);
             Plugin.Log.LogInfo("Restored local control because the controlled character was removed.");
         }
+    }
+
+    internal static bool IsControllingTarget(Character character)
+    {
+        return character != null
+            && controlledCharacter == character
+            && Character.localCharacter == character;
     }
 
     private static bool TryGetSwitchPrompt(Character character, out string keyText, out string text)
@@ -454,6 +463,7 @@ internal static class DummyControlSwitcher
         if (!TryFindOriginalLocalCharacter(out Character originalLocal))
         {
             Plugin.Log.LogWarning("Unable to restore local control because the original local character could not be found.");
+            DummyControlPhotonViewAuthority.RestoreControlledView();
             controlledCharacter = null;
             return;
         }
@@ -476,6 +486,7 @@ internal static class DummyControlSwitcher
             playerHandler.m_playerCharacterLookup[PhotonNetwork.LocalPlayer.ActorNumber] = target;
         }
 
+        DummyControlPhotonViewAuthority.AssignWriteControl(target, originalLocalCharacter);
         SetSpecCharacterMethod?.Invoke(null, [null]);
         AssignLocalVoiceRecorder(previous, target);
         if (!target.gameObject.activeSelf)
@@ -555,9 +566,17 @@ internal static class DummyControlSwitcher
 
     private static bool IsOriginalLocalCharacter(Character? character)
     {
+        if (PhotonNetwork.LocalPlayer == null)
+        {
+            return character != null
+                && character.photonView != null
+                && character.photonView.IsMine
+                && !DummyPlayerSpawner.IsDummyPlayer(character);
+        }
+
         return character != null
             && character.photonView != null
-            && character.photonView.IsMine
+            && character.photonView.OwnerActorNr == PhotonNetwork.LocalPlayer.ActorNumber
             && !DummyPlayerSpawner.IsDummyPlayer(character);
     }
 

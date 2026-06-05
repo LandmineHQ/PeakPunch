@@ -36,7 +36,7 @@ internal static class PeakDummyToolsConfig
             "Dummy Spawner",
             "SpawnDummyShortcut",
             new KeyboardShortcut(KeyCode.G, KeyCode.LeftAlt),
-            "When dummy tools are enabled, the local client can press this shortcut to spawn a dummy player at the local player's position.");
+            "When dummy tools are enabled and this client is the MasterClient, press this shortcut to spawn a dummy player at the local player's position.");
 
         SwitchControlShortcut = config.Bind(
             "Dummy Control",

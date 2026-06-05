@@ -22,6 +22,9 @@ internal static class DummyPlayerSpawner
     private const int InstantiationHatIndex = 7;
     private const int InstantiationSashIndex = 8;
     private const int InstantiationOwnerNamePrefixIndex = 9;
+    private const int InstantiationSyntheticActorNumberIndex = 10;
+    private const int SyntheticActorNumberMin = 100_000_000;
+    private const int SyntheticActorNumberMaxExclusive = 1_000_000_000;
     private const int RandomCustomizationAttempts = 8;
 
     private static readonly HashSet<int> DummySpawnedViewIds = [];
@@ -42,12 +45,12 @@ internal static class DummyPlayerSpawner
 
     private sealed class DummyPlayerRecord
     {
-        internal DummyPlayerRecord(int dummyNumber, int characterViewId, Player player)
+        internal DummyPlayerRecord(int dummyNumber, int characterViewId, int actorNumber, Player player)
         {
             DummyNumber = dummyNumber;
             Player = player;
             UserId = $"{DummyPlayerInstantiationMarker}.{characterViewId}";
-            ActorNumber = characterViewId > 0 ? -characterViewId : -10_000 - dummyNumber;
+            ActorNumber = actorNumber;
         }
 
         internal int DummyNumber { get; }
@@ -331,6 +334,12 @@ internal static class DummyPlayerSpawner
             return;
         }
 
+        if (!PhotonNetwork.IsMasterClient)
+        {
+            Plugin.Log.LogWarning("Dummy player spawn is disabled on non-master clients.");
+            return;
+        }
+
         Character localCharacter = Character.localCharacter;
         if (localCharacter == null)
         {
@@ -348,6 +357,7 @@ internal static class DummyPlayerSpawner
         int localActorNumber = PhotonNetwork.LocalPlayer.ActorNumber;
         int dummyNumber = nextDummyNumber++;
         string ownerNamePrefix = GetCachedLocalPlayerNamePrefix();
+        int syntheticActorNumber = AllocateRandomSyntheticActorNumber();
         Vector3 spawnPosition = GetCharacterSpawnPosition(localCharacter);
         Quaternion spawnRotation = localCharacter.transform.rotation;
         CharacterCustomizationData customizationData = CreateRandomDummyCustomizationData(GetLocalCustomizationData());
@@ -364,6 +374,7 @@ internal static class DummyPlayerSpawner
             customizationData.currentHat,
             customizationData.currentSash,
             ownerNamePrefix,
+            syntheticActorNumber,
         ];
         GameObject spawnedObject = PhotonNetwork.Instantiate(CharacterPrefabName, spawnPosition, spawnRotation, 0, instantiationData);
         Character spawnedCharacter = spawnedObject.GetComponent<Character>();
@@ -417,6 +428,7 @@ internal static class DummyPlayerSpawner
         }
 
         string playerName = GetDummyPlayerName(character, dummyNumber);
+        int actorNumber = GetDummySyntheticActorNumber(character.photonView, dummyNumber);
         pendingSyntheticPlayerName = playerName;
         creatingSyntheticPlayer = true;
         Player player;
@@ -433,7 +445,7 @@ internal static class DummyPlayerSpawner
         }
 
         InitializeSyntheticPlayer(player, playerName);
-        DummyPlayerRecord record = new(dummyNumber, viewId, player);
+        DummyPlayerRecord record = new(dummyNumber, viewId, actorNumber, player);
         DummyPlayersByCharacterViewId[viewId] = record;
         DummyCharacterViewIdsByPlayer[player] = viewId;
         return player;
@@ -814,5 +826,89 @@ internal static class DummyPlayerSpawner
 
         ownerNamePrefix = prefix.Trim();
         return true;
+    }
+
+    private static int AllocateRandomSyntheticActorNumber()
+    {
+        for (int attempt = 0; attempt < RandomCustomizationAttempts * 4; attempt++)
+        {
+            int candidate = Random.Range(SyntheticActorNumberMin, SyntheticActorNumberMaxExclusive);
+            if (!IsSyntheticActorNumberReserved(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        for (int candidate = SyntheticActorNumberMin; candidate < SyntheticActorNumberMaxExclusive; candidate++)
+        {
+            if (!IsSyntheticActorNumberReserved(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return -Random.Range(SyntheticActorNumberMin, SyntheticActorNumberMaxExclusive);
+    }
+
+    private static int GetDummySyntheticActorNumber(PhotonView photonView, int dummyNumber)
+    {
+        int viewId = photonView != null ? photonView.ViewID : 0;
+        if (TryGetDummySyntheticActorNumber(photonView, out int actorNumber)
+            && !IsSyntheticActorNumberReserved(actorNumber))
+        {
+            return actorNumber;
+        }
+
+        int fallbackActorNumber = viewId > 0 ? -viewId : -10_000 - dummyNumber;
+        return !IsSyntheticActorNumberReserved(fallbackActorNumber)
+            ? fallbackActorNumber
+            : -10_000 - dummyNumber;
+    }
+
+    private static bool TryGetDummySyntheticActorNumber(PhotonView? photonView, out int actorNumber)
+    {
+        actorNumber = 0;
+        if (photonView == null || !TryGetDummyNumber(photonView, out _))
+        {
+            return false;
+        }
+
+        object[] instantiationData = photonView.InstantiationData;
+        if (instantiationData == null || instantiationData.Length <= InstantiationSyntheticActorNumberIndex)
+        {
+            return false;
+        }
+
+        if (instantiationData[InstantiationSyntheticActorNumberIndex] is int syntheticActorNumber)
+        {
+            actorNumber = syntheticActorNumber;
+            return actorNumber != 0;
+        }
+
+        return false;
+    }
+
+    private static bool IsSyntheticActorNumberReserved(int actorNumber)
+    {
+        if (actorNumber == 0)
+        {
+            return true;
+        }
+
+        if (PhotonNetwork.CurrentRoom?.Players != null
+            && PhotonNetwork.CurrentRoom.Players.ContainsKey(actorNumber))
+        {
+            return true;
+        }
+
+        foreach (DummyPlayerRecord record in DummyPlayersByCharacterViewId.Values)
+        {
+            if (record.ActorNumber == actorNumber)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
