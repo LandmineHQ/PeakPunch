@@ -11,7 +11,6 @@ internal enum BackpackPreparationResult
 {
     Failed,
     Ready,
-    Deferred,
 }
 
 internal static class BackpackCarryTransfer
@@ -50,16 +49,20 @@ internal static class BackpackCarryTransfer
 
     internal static BackpackPreparationResult PrepareBackpacksForClimb(Character carrier, Character carried)
     {
+        BuddyClimbDiagnostics.LogCarry($"PrepareBackpacksForClimb entered: {BuddyClimbDiagnostics.DescribeViews(carrier, carried)}");
+
         if (!AllowsCarrierBackpack
             || carrier == null
             || carried == null
             || !HasBackpack(carrier))
         {
+            BuddyClimbDiagnostics.LogCarry($"PrepareBackpacksForClimb returning Ready without transfer: allows={AllowsCarrierBackpack} {BuddyClimbDiagnostics.DescribeViews(carrier, carried)}");
             return BackpackPreparationResult.Ready;
         }
 
         if (!CanTransferCarrierBackpack(carrier, carried))
         {
+            BuddyClimbDiagnostics.LogCarry($"PrepareBackpacksForClimb returning Failed because CanTransferCarrierBackpack=false: {BuddyClimbDiagnostics.DescribeViews(carrier, carried)}");
             return BackpackPreparationResult.Failed;
         }
 
@@ -67,15 +70,20 @@ internal static class BackpackCarryTransfer
         {
             if (TryDropCarriedBackpackAndTransferOnMaster(carrier, carried))
             {
+                BuddyClimbDiagnostics.LogCarry($"PrepareBackpacksForClimb returning Ready after master drop+transfer: {BuddyClimbDiagnostics.DescribeViews(carrier, carried)}");
                 return BackpackPreparationResult.Ready;
             }
 
-            return TryRequestMasterDropCarriedBackpackAndTransfer(carrier, carried)
-                ? BackpackPreparationResult.Deferred
+            bool requestedMasterDrop = TryRequestMasterDropCarriedBackpackAndTransfer(carrier, carried);
+            BuddyClimbDiagnostics.LogCarry($"PrepareBackpacksForClimb non-master drop+transfer requested={requestedMasterDrop}: {BuddyClimbDiagnostics.DescribeViews(carrier, carried)}");
+            return requestedMasterDrop
+                ? BackpackPreparationResult.Ready
                 : BackpackPreparationResult.Failed;
         }
 
-        return TryTransferCarrierBackpack(carrier, carried, syncInventory: true)
+        bool transferred = TryTransferCarrierBackpack(carrier, carried, syncInventory: true);
+        BuddyClimbDiagnostics.LogCarry($"PrepareBackpacksForClimb transfer without carried backpack result={transferred}: {BuddyClimbDiagnostics.DescribeViews(carrier, carried)}");
+        return transferred
             ? BackpackPreparationResult.Ready
             : BackpackPreparationResult.Failed;
     }
@@ -139,18 +147,23 @@ internal static class BackpackCarryTransfer
 
     private static bool TryRequestMasterDropCarriedBackpackAndTransfer(Character carrier, Character carried)
     {
+        BuddyClimbDiagnostics.LogCarry($"Requesting MasterClient backpack drop before transfer: {BuddyClimbDiagnostics.DescribeViews(carrier, carried)}");
         if (!TryRequestVanillaSlotDropOnMaster(carried))
         {
-            return false;
-        }
-
-        ClearCarriedBackpackLocally(carried);
-        if (!TryTransferCarrierBackpack(carrier, carried, syncInventory: false))
-        {
+            BuddyClimbDiagnostics.LogCarry("TryRequestMasterDropCarriedBackpackAndTransfer failed because TryRequestVanillaSlotDropOnMaster=false.");
             return false;
         }
 
         TrackPendingBackpackTransfer(carrier, carried);
+        ClearCarriedBackpackLocally(carried);
+        if (!TryTransferCarrierBackpack(carrier, carried, syncInventory: true))
+        {
+            ClearPendingBackpackTransfer(carried);
+            BuddyClimbDiagnostics.LogCarry("TryRequestMasterDropCarriedBackpackAndTransfer failed because TryTransferCarrierBackpack=false.");
+            return false;
+        }
+
+        BuddyClimbDiagnostics.LogCarry($"Requested MasterClient drop and transferred carrier backpack locally: {BuddyClimbDiagnostics.DescribeViews(carrier, carried)}");
         return true;
     }
 
@@ -174,19 +187,12 @@ internal static class BackpackCarryTransfer
         }
 
         InventorySyncData inventorySyncData = IBinarySerializable.GetFromManagedArray<InventorySyncData>(data);
-        if (inventorySyncData.hasBackpack)
+        if (inventorySyncData.hasBackpack || forceSync)
         {
-            PendingBackpackTransferSyncSuppressions.Remove(viewId);
             return false;
         }
 
-        if (forceSync)
-        {
-            PendingBackpackTransferSyncSuppressions.Remove(viewId);
-            return false;
-        }
-
-        SyncPendingBackpackTransfer(viewId, pendingTransfer);
+        PendingBackpackTransferSyncSuppressions.Remove(viewId);
         Plugin.Log.LogDebug($"Suppressed stale empty backpack sync for {player.character?.characterName ?? "unknown player"} during BuddyClimb backpack transfer.");
         return true;
     }
@@ -424,35 +430,18 @@ internal static class BackpackCarryTransfer
             return;
         }
 
-        PendingBackpackTransferSyncSuppressions[carried.player.photonView.ViewID] = new PendingBackpackTransfer(
-            carrier,
-            carried,
-            Time.realtimeSinceStartup + PendingBackpackTransferSyncSuppressionSeconds);
+        PendingBackpackTransferSyncSuppressions[carried.player.photonView.ViewID] =
+            new PendingBackpackTransfer(Time.realtimeSinceStartup + PendingBackpackTransferSyncSuppressionSeconds);
     }
 
-    private static void SyncPendingBackpackTransfer(int viewId, PendingBackpackTransfer pendingTransfer)
+    private static void ClearPendingBackpackTransfer(Character carried)
     {
-        if (pendingTransfer.FinalSyncSent)
+        if (carried.player?.photonView == null)
         {
             return;
         }
 
-        pendingTransfer.FinalSyncSent = true;
-
-        if (!CanSyncInventory(pendingTransfer.Carrier.player)
-            || !CanSyncInventory(pendingTransfer.Carried.player)
-            || !HasBackpack(pendingTransfer.Carried)
-            || HasBackpack(pendingTransfer.Carrier))
-        {
-            Plugin.Log.LogWarning("Unable to send BuddyClimb backpack transfer final sync because the local transfer state is invalid.");
-            PendingBackpackTransferSyncSuppressions.Remove(viewId);
-            return;
-        }
-
-        PendingBackpackTransferSyncSuppressions.Remove(viewId);
-        SyncInventory(pendingTransfer.Carried.player);
-        SyncInventory(pendingTransfer.Carrier.player);
-        BuddyClimbCarryStarter.TryStartCarry(pendingTransfer.Carrier, pendingTransfer.Carried);
+        PendingBackpackTransferSyncSuppressions.Remove(carried.player.photonView.ViewID);
     }
 
     private static bool CanDropBackpackWithVanillaSlotDrop(Character character)
@@ -527,19 +516,11 @@ internal static class BackpackCarryTransfer
 
     private sealed class PendingBackpackTransfer
     {
-        internal PendingBackpackTransfer(Character carrier, Character carried, float expiresAt)
+        internal PendingBackpackTransfer(float expiresAt)
         {
-            Carrier = carrier;
-            Carried = carried;
             ExpiresAt = expiresAt;
         }
 
-        internal Character Carrier { get; }
-
-        internal Character Carried { get; }
-
         internal float ExpiresAt { get; }
-
-        internal bool FinalSyncSent { get; set; }
     }
 }

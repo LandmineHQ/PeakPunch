@@ -191,22 +191,28 @@ internal static class CharacterInteractiblePatch
 
     private static bool TryStartClimb(Character character, Character interactor)
     {
+        BuddyClimbDiagnostics.LogCarry($"TryStartClimb entered: {BuddyClimbDiagnostics.DescribeViews(character, interactor)}");
+
         if (!CanStartClimb(character, interactor))
         {
+            BuddyClimbDiagnostics.LogCarry($"TryStartClimb blocked by CanStartClimb=false: {BuddyClimbDiagnostics.DescribeViews(character, interactor)}");
             return false;
         }
 
         BackpackPreparationResult preparationResult = BackpackCarryTransfer.PrepareBackpacksForClimb(
             character,
             interactor);
+        BuddyClimbDiagnostics.LogCarry($"Backpack preparation result={preparationResult}: {BuddyClimbDiagnostics.DescribeViews(character, interactor)}");
         if (preparationResult == BackpackPreparationResult.Failed)
         {
+            BuddyClimbDiagnostics.LogCarry("TryStartClimb consumed interaction because backpack preparation failed.");
             return true;
         }
 
         if (preparationResult == BackpackPreparationResult.Ready)
         {
-            BuddyClimbCarryStarter.TryStartCarry(character, interactor);
+            bool startSent = BuddyClimbCarryStarter.TryStartCarry(character, interactor);
+            BuddyClimbDiagnostics.LogCarry($"TryStartClimb called TryStartCarry, sent={startSent}: {BuddyClimbDiagnostics.DescribeViews(character, interactor)}");
         }
 
         return true;

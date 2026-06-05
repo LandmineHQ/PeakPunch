@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.10 fix
+
+- Restored immediate BuddyClimb carry-start RPC sending after backpack preparation and removed sender-side stale carry-state gates that could prevent the carrier from receiving `RPCA_StartCarry`.
+- Added a remote-only vanilla pass-out/un-pass-out sync around BuddyClimb carry so unmodded carrier clients do not immediately drop a conscious local climber.
+
 ## 0.1.9
 
 - Replaced BuddyClimb's backpack snapshot drop with PEAK's vanilla backpack slot drop before transferring the carrier backpack.

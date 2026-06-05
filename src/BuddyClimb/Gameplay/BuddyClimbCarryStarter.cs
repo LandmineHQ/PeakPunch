@@ -6,15 +6,26 @@ internal static class BuddyClimbCarryStarter
 {
     internal static bool TryStartCarry(Character carrier, Character carried)
     {
+        BuddyClimbDiagnostics.LogCarry($"TryStartCarry requested: {BuddyClimbDiagnostics.DescribeViews(carrier, carried)}");
+
         if (!CanStartCarryRpc(carrier, carried))
         {
+            BuddyClimbDiagnostics.LogCarry($"TryStartCarry blocked by CanStartCarryRpc=false: {BuddyClimbDiagnostics.DescribeViews(carrier, carried)}");
             return false;
         }
+
+        BuddyClimbDiagnostics.LogCarry(
+            $"Sending Photon RPC {nameof(CharacterCarrying.RPCA_StartCarry)} target=All carrierView={carrier.photonView.ViewID} carriedView={carried.photonView.ViewID}: {BuddyClimbDiagnostics.DescribeViews(carrier, carried)}");
+
+        BuddyClimbRemotePassOutSync.PrepareRemoteCarryStart(carried);
 
         carrier.photonView.RPC(
             nameof(CharacterCarrying.RPCA_StartCarry),
             RpcTarget.All,
             carried.photonView);
+
+        BuddyClimbDiagnostics.LogCarry(
+            $"Sent Photon RPC {nameof(CharacterCarrying.RPCA_StartCarry)} carrierView={carrier.photonView.ViewID} carriedView={carried.photonView.ViewID}");
 
         return true;
     }
@@ -51,6 +62,7 @@ internal static class BuddyClimbCarryStarter
             || carrier.photonView == null
             || carried.photonView == null)
         {
+            BuddyClimbDiagnostics.LogCarry($"CanStartCarryRpc basic validation failed: {BuddyClimbDiagnostics.DescribeViews(carrier, carried)}");
             return false;
         }
 
@@ -63,19 +75,6 @@ internal static class BuddyClimbCarryStarter
         if (carrier.data.dead || carried.data.dead || carried.data.fullyPassedOut)
         {
             Plugin.Log.LogDebug($"Skipping BuddyClimb start carry for {carried.characterName} because the carry state is no longer valid.");
-            return false;
-        }
-
-        Character existingCarriedPlayer = carrier.data.carriedPlayer;
-        if (existingCarriedPlayer != null && existingCarriedPlayer != carried)
-        {
-            Plugin.Log.LogDebug($"Skipping BuddyClimb start carry because {carrier.characterName} is already carrying {existingCarriedPlayer.characterName}.");
-            return false;
-        }
-
-        if (carried.data.isCarried && carried.data.carrier != carrier)
-        {
-            Plugin.Log.LogDebug($"Skipping BuddyClimb start carry because {carried.characterName} is already carried by another player.");
             return false;
         }
 
