@@ -61,7 +61,9 @@ internal static class CharacterCarryingPatch
     {
         if (targetView != null)
         {
-            CarryInteractionProxy.Disable(targetView.GetComponent<Character>());
+            Character carriedCharacter = targetView.GetComponent<Character>();
+            CarryInteractionProxy.Disable(carriedCharacter);
+            CarriedBackpackVisuals.HideIfForcedVisible(carriedCharacter);
         }
     }
 
@@ -120,6 +122,10 @@ internal static class CharacterCarryingPatch
             && carriedCharacter.data.isCarried)
         {
             CarryInteractionProxy.Enable(carriedCharacter);
+            if (carriedCharacter.IsLocal)
+            {
+                CarriedBackpackVisuals.Update(carriedCharacter.GetComponent<CharacterBackpackHandler>());
+            }
         }
     }
 }

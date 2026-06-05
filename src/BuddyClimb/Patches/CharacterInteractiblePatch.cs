@@ -196,16 +196,7 @@ internal static class CharacterInteractiblePatch
             return false;
         }
 
-        if (BackpackCarryTransfer.WillDropCarriedBackpack(character, interactor))
-        {
-            if (!BackpackCarryTransfer.CanTransferCarrierBackpack(character, interactor)
-                || !BackpackCarryTransfer.TryDropCarriedBackpackSnapshot(interactor))
-            {
-                return false;
-            }
-        }
-
-        if (!BackpackCarryTransfer.TryTransferCarrierBackpack(character, interactor))
+        if (!BackpackCarryTransfer.TryPrepareBackpacksForClimb(character, interactor))
         {
             return false;
         }

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.9
+
+- Replaced BuddyClimb's backpack snapshot drop with PEAK's vanilla backpack slot drop before transferring the carrier backpack.
+- Suppressed stale empty-backpack inventory syncs during BuddyClimb backpack transfer.
+- Added rollback snapshots for failed BuddyClimb backpack transfers.
+- Show the local player's backpack contents while they are BuddyClimb-carried, then restore PEAK's normal first-person hiding after drop.
+
 ## 0.1.8
 
 - You can climb the player when thery holding someting whatever.

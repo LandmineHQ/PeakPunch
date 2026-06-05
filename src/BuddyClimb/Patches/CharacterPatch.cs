@@ -10,6 +10,6 @@ internal static class CharacterPatch
     [HarmonyPostfix]
     private static void StartPostfix(Character __instance)
     {
-        BackpackSnapshotDropRpc.Ensure(__instance);
+        BackpackTransferRpc.Ensure(__instance);
     }
 }
