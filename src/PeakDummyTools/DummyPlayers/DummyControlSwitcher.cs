@@ -22,9 +22,20 @@ internal static class DummyControlSwitcher
         typeof(MainCameraMovement),
         nameof(MainCameraMovement.specCharacter));
     private static readonly RaycastHit[] LineOfSightHits = new RaycastHit[LineOfSightHitBufferSize];
+    private static readonly Dictionary<Recorder, VoiceRecorderState> SavedVoiceRecorderStates = [];
 
     private static Character? originalLocalCharacter;
     private static Character? controlledCharacter;
+
+    private sealed class VoiceRecorderState
+    {
+        internal VoiceRecorderState(bool transmitEnabled)
+        {
+            TransmitEnabled = transmitEnabled;
+        }
+
+        internal bool TransmitEnabled { get; }
+    }
 
     internal static void Update()
     {
@@ -148,6 +159,7 @@ internal static class DummyControlSwitcher
         }
 
         DummyControlPhotonViewAuthority.HandleCharacterRemoved(character);
+        DummyControlLookSyncDriver.HandleCharacterRemoved(character);
 
         if (character == originalLocalCharacter)
         {
@@ -476,6 +488,8 @@ internal static class DummyControlSwitcher
     private static void AssignLocalControl(Character target)
     {
         Character previous = Character.localCharacter;
+        DummyControlLookSyncDriver.ResetRemoteLook(previous);
+        DummyControlLookSyncDriver.ResetRemoteLook(target);
         ResetInput(previous);
         ResetInput(target);
 
@@ -501,18 +515,43 @@ internal static class DummyControlSwitcher
         Recorder? previousRecorder = previous != null
             ? previous.GetComponentInChildren<Recorder>(true)
             : null;
-        if (previousRecorder != null && previousRecorder != targetRecorder)
-        {
-            previousRecorder.TransmitEnabled = false;
-        }
 
         if (targetRecorder == null)
         {
             Plugin.Log.LogWarning($"Unable to switch voice recorder because {target.characterName} has no Recorder component.");
+        }
+        else
+        {
+            VoiceClientHandler.LocalPlayerAssigned(targetRecorder);
+            RestoreSavedVoiceRecorderState(targetRecorder);
+        }
+
+        if (previousRecorder != null && previousRecorder != targetRecorder)
+        {
+            SaveVoiceRecorderState(previousRecorder);
+            previousRecorder.TransmitEnabled = false;
+        }
+    }
+
+    private static void SaveVoiceRecorderState(Recorder recorder)
+    {
+        if (recorder == null || SavedVoiceRecorderStates.ContainsKey(recorder))
+        {
             return;
         }
 
-        VoiceClientHandler.LocalPlayerAssigned(targetRecorder);
+        SavedVoiceRecorderStates.Add(recorder, new VoiceRecorderState(recorder.TransmitEnabled));
+    }
+
+    private static void RestoreSavedVoiceRecorderState(Recorder recorder)
+    {
+        if (recorder == null || !SavedVoiceRecorderStates.TryGetValue(recorder, out VoiceRecorderState state))
+        {
+            return;
+        }
+
+        SavedVoiceRecorderStates.Remove(recorder);
+        recorder.TransmitEnabled = state.TransmitEnabled;
     }
 
     private static void ResetInput(Character? character)
