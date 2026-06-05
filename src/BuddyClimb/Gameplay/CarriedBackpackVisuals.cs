@@ -6,10 +6,11 @@ namespace BuddyClimb.Gameplay;
 
 internal static class CarriedBackpackVisuals
 {
+    private static readonly byte BackpackSlotIndex = (byte)Player.BACKPACKSLOTINDEX;
     private static readonly System.Reflection.MethodInfo HideRenderersMethod =
         AccessTools.Method(typeof(Item), "HideRenderers");
 
-    private static readonly HashSet<int> ForcedVisibleCharacterViewIds = [];
+    private static readonly HashSet<int> ForcedVisibleItemCharacterViewIds = [];
 
     internal static void Update(CharacterBackpackHandler handler)
     {
@@ -20,22 +21,22 @@ internal static class CarriedBackpackVisuals
 
         Character character = handler.character;
         int viewId = character.photonView.ViewID;
-        bool shouldShow = ShouldShowCarriedBackpack(character);
+        bool shouldShow = ShouldForceBackpackItemRender(character);
 
         if (shouldShow)
         {
-            bool wasForcedVisible = ForcedVisibleCharacterViewIds.Contains(viewId);
-            if (Show(handler, refreshItems: !wasForcedVisible))
+            bool wasForcedVisible = ForcedVisibleItemCharacterViewIds.Contains(viewId);
+            if (ShowBackpackItems(handler, refreshItems: !wasForcedVisible))
             {
-                ForcedVisibleCharacterViewIds.Add(viewId);
+                ForcedVisibleItemCharacterViewIds.Add(viewId);
             }
 
             return;
         }
 
-        if (ForcedVisibleCharacterViewIds.Remove(viewId))
+        if (ForcedVisibleItemCharacterViewIds.Remove(viewId))
         {
-            Hide(handler);
+            HideBackpackItems(handler);
         }
     }
 
@@ -47,7 +48,7 @@ internal static class CarriedBackpackVisuals
         }
 
         Character localCharacter = Character.localCharacter;
-        if (!ShouldShowCarriedBackpack(localCharacter))
+        if (!ShouldForceBackpackItemRender(localCharacter))
         {
             return;
         }
@@ -62,7 +63,7 @@ internal static class CarriedBackpackVisuals
             return;
         }
 
-        if (!ForcedVisibleCharacterViewIds.Remove(character.photonView.ViewID))
+        if (!ForcedVisibleItemCharacterViewIds.Remove(character.photonView.ViewID))
         {
             return;
         }
@@ -70,11 +71,11 @@ internal static class CarriedBackpackVisuals
         CharacterBackpackHandler handler = character.GetComponent<CharacterBackpackHandler>();
         if (handler != null)
         {
-            Hide(handler);
+            HideBackpackItems(handler);
         }
     }
 
-    private static bool ShouldShowCarriedBackpack(Character character)
+    private static bool ShouldForceBackpackItemRender(Character character)
     {
         return character != null
             && character.IsLocal
@@ -82,17 +83,19 @@ internal static class CarriedBackpackVisuals
             && character.data.isCarried
             && !character.data.dead
             && !character.data.fullyPassedOut
+            && MainCameraMovement.IsSpectating
+            && MainCameraMovement.specCharacter == character
+            && HasOnBackBackpack(character)
             && Patches.CharacterCarryingPatch.IsBuddyClimbCarried(character);
     }
 
-    private static bool Show(CharacterBackpackHandler handler, bool refreshItems)
+    private static bool ShowBackpackItems(CharacterBackpackHandler handler, bool refreshItems)
     {
-        if (!HasVisibleBackpackSlot(handler.character))
+        if (!HasOnBackBackpack(handler.character))
         {
             return false;
         }
 
-        handler.backpack?.SetActive(true);
         if (!refreshItems)
         {
             return true;
@@ -109,17 +112,9 @@ internal static class CarriedBackpackVisuals
         return true;
     }
 
-    private static void Hide(CharacterBackpackHandler handler)
+    private static void HideBackpackItems(CharacterBackpackHandler handler)
     {
         SetSpawnedItemsVisible(handler.backpackVisuals, visible: false);
-
-        if (handler.character != null
-            && handler.character.photonView != null
-            && handler.character.photonView.IsMine
-            && !MainCameraMovement.IsSpectating)
-        {
-            handler.backpack?.SetActive(false);
-        }
     }
 
     private static void SetSpawnedItemsVisible(BackpackOnBackVisuals backpackVisuals, bool visible)
@@ -159,15 +154,22 @@ internal static class CarriedBackpackVisuals
         }
     }
 
-    private static bool HasVisibleBackpackSlot(Character character)
+    private static bool HasOnBackBackpack(Character character)
     {
-        return character?.player?.backpackSlot is { hasBackpack: true };
+        return character?.player?.backpackSlot is { hasBackpack: true }
+            && !IsBackpackSlotSelected(character);
+    }
+
+    private static bool IsBackpackSlotSelected(Character character)
+    {
+        CharacterItems characterItems = character.refs.items;
+        return characterItems != null
+            && characterItems.currentSelectedSlot.IsSome
+            && characterItems.currentSelectedSlot.Value == BackpackSlotIndex;
     }
 
     private static void ShowItem(Item item)
     {
-        item.gameObject.SetActive(true);
-
         foreach (Renderer renderer in item.GetComponentsInChildren<Renderer>(includeInactive: true))
         {
             renderer.enabled = true;

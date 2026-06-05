@@ -2,14 +2,22 @@ using System.Collections.Generic;
 using BuddyClimb.Configuration;
 using Photon.Pun;
 using UnityEngine;
+using Zorro.Core;
 using Zorro.Core.Serizalization;
 
 namespace BuddyClimb.Gameplay;
 
+internal enum BackpackPreparationResult
+{
+    Failed,
+    Ready,
+    Deferred,
+}
+
 internal static class BackpackCarryTransfer
 {
     private static readonly byte BackpackSlotIndex = (byte)Player.BACKPACKSLOTINDEX;
-    private static readonly Dictionary<int, float> PendingBackpackTransferSyncSuppressions = [];
+    private static readonly Dictionary<int, PendingBackpackTransfer> PendingBackpackTransferSyncSuppressions = [];
     private const float PendingBackpackTransferSyncSuppressionSeconds = 2f;
 
     internal static bool AllowsCarrierBackpack => BuddyClimbConfig.EnableBackpackTransfer.Value;
@@ -40,28 +48,36 @@ internal static class BackpackCarryTransfer
             && (!HasBackpack(carried) || CanDropBackpackWithVanillaSlotDrop(carried));
     }
 
-    internal static bool TryPrepareBackpacksForClimb(Character carrier, Character carried)
+    internal static BackpackPreparationResult PrepareBackpacksForClimb(Character carrier, Character carried)
     {
         if (!AllowsCarrierBackpack
             || carrier == null
             || carried == null
             || !HasBackpack(carrier))
         {
-            return true;
+            return BackpackPreparationResult.Ready;
         }
 
         if (!CanTransferCarrierBackpack(carrier, carried))
         {
-            return false;
+            return BackpackPreparationResult.Failed;
         }
 
         if (HasBackpack(carried))
         {
-            return TryDropCarriedBackpackAndTransferOnMaster(carrier, carried)
-                || TryRequestMasterDropCarriedBackpackAndTransfer(carrier, carried);
+            if (TryDropCarriedBackpackAndTransferOnMaster(carrier, carried))
+            {
+                return BackpackPreparationResult.Ready;
+            }
+
+            return TryRequestMasterDropCarriedBackpackAndTransfer(carrier, carried)
+                ? BackpackPreparationResult.Deferred
+                : BackpackPreparationResult.Failed;
         }
 
-        return TryTransferCarrierBackpack(carrier, carried, syncInventory: true);
+        return TryTransferCarrierBackpack(carrier, carried, syncInventory: true)
+            ? BackpackPreparationResult.Ready
+            : BackpackPreparationResult.Failed;
     }
 
     internal static bool TryDropCarriedBackpackAndTransferOnMaster(Character carrier, Character carried)
@@ -123,11 +139,19 @@ internal static class BackpackCarryTransfer
 
     private static bool TryRequestMasterDropCarriedBackpackAndTransfer(Character carrier, Character carried)
     {
-        BackpackTransferRpc transferRpc = BackpackTransferRpc.Ensure(carried);
-        transferRpc.RequestDropCarriedBackpackAndTransfer(carrier.photonView, carried.photonView);
-        SuppressIncomingEmptyBackpackSync(carried.player);
+        if (!TryRequestVanillaSlotDropOnMaster(carried))
+        {
+            return false;
+        }
+
         ClearCarriedBackpackLocally(carried);
-        return TryTransferCarrierBackpack(carrier, carried, syncInventory: false);
+        if (!TryTransferCarrierBackpack(carrier, carried, syncInventory: false))
+        {
+            return false;
+        }
+
+        TrackPendingBackpackTransfer(carrier, carried);
+        return true;
     }
 
     internal static bool ShouldSuppressStaleBackpackEmptySync(Player player, byte[] data, bool forceSync)
@@ -138,12 +162,12 @@ internal static class BackpackCarryTransfer
         }
 
         int viewId = player.photonView.ViewID;
-        if (!PendingBackpackTransferSyncSuppressions.TryGetValue(viewId, out float expiresAt))
+        if (!PendingBackpackTransferSyncSuppressions.TryGetValue(viewId, out PendingBackpackTransfer pendingTransfer))
         {
             return false;
         }
 
-        if (Time.realtimeSinceStartup > expiresAt)
+        if (Time.realtimeSinceStartup > pendingTransfer.ExpiresAt)
         {
             PendingBackpackTransferSyncSuppressions.Remove(viewId);
             return false;
@@ -162,8 +186,34 @@ internal static class BackpackCarryTransfer
             return false;
         }
 
+        SyncPendingBackpackTransfer(viewId, pendingTransfer);
         Plugin.Log.LogDebug($"Suppressed stale empty backpack sync for {player.character?.characterName ?? "unknown player"} during BuddyClimb backpack transfer.");
         return true;
+    }
+
+    private static bool TryRequestVanillaSlotDropOnMaster(Character carried)
+    {
+        if (!CanDropBackpackWithVanillaSlotDrop(carried))
+        {
+            Plugin.Log.LogWarning($"Unable to request {carried.characterName}'s backpack drop because CharacterItems is unavailable.");
+            return false;
+        }
+
+        try
+        {
+            carried.refs.items.photonView.RPC(
+                nameof(CharacterItems.DropItemFromSlotRPC),
+                RpcTarget.MasterClient,
+                BackpackSlotIndex,
+                GetBackpackDropPosition(carried));
+
+            return true;
+        }
+        catch (System.Exception ex)
+        {
+            Plugin.Log.LogWarning($"Unable to request {carried.characterName}'s backpack drop through PEAK's slot drop RPC: {ex}");
+            return false;
+        }
     }
 
     private static bool TryDropCarriedBackpackWithVanillaSlotDrop(Character carried)
@@ -218,6 +268,7 @@ internal static class BackpackCarryTransfer
         BackpackSlot carrierBackpack = carrierPlayer.backpackSlot;
         carriedPlayer.backpackSlot = carrierBackpack;
         carrierPlayer.backpackSlot = new BackpackSlot(BackpackSlotIndex);
+        ClearCarrierHeldBackpack(carrier);
 
         carried.refs.afflictions.UpdateWeight();
         carrier.refs.afflictions.UpdateWeight();
@@ -229,6 +280,42 @@ internal static class BackpackCarryTransfer
         }
 
         return true;
+    }
+
+    internal static void ClearHeldBackpackAfterTransfer(Character carrier)
+    {
+        if (carrier == null)
+        {
+            return;
+        }
+
+        CharacterItems characterItems = carrier.refs.items;
+        if (characterItems == null)
+        {
+            return;
+        }
+
+        bool selectedBackpack = IsBackpackSlotSelected(characterItems);
+        bool holdingBackpack = carrier.data.currentItem is Backpack;
+        if (!selectedBackpack && !holdingBackpack)
+        {
+            return;
+        }
+
+        if (characterItems.currentSelectedSlot.IsSome)
+        {
+            characterItems.lastSelectedSlot = characterItems.currentSelectedSlot;
+        }
+
+        characterItems.currentSelectedSlot = Optionable<byte>.None;
+
+        if (holdingBackpack)
+        {
+            characterItems.DestroyHeldItemRpc();
+        }
+
+        carrier.player.itemsChangedAction?.Invoke(carrier.player.itemSlots);
+        characterItems.onSlotEquipped?.Invoke();
     }
 
     private static void RollBackBackpackTransfer(
@@ -297,21 +384,75 @@ internal static class BackpackCarryTransfer
         return character.player?.backpackSlot is { hasBackpack: true };
     }
 
+    private static void ClearCarrierHeldBackpack(Character carrier)
+    {
+        ClearHeldBackpackAfterTransfer(carrier);
+
+        CharacterItems characterItems = carrier.refs.items;
+        if (characterItems?.photonView == null)
+        {
+            return;
+        }
+
+        characterItems.photonView.RPC(
+            nameof(CharacterItems.DestroyHeldItemRpc),
+            RpcTarget.Others);
+
+        characterItems.photonView.RPC(
+            nameof(CharacterItems.EquipSlotRpc),
+            RpcTarget.Others,
+            -1,
+            -1);
+    }
+
+    private static bool IsBackpackSlotSelected(CharacterItems characterItems)
+    {
+        return characterItems.currentSelectedSlot.IsSome
+            && characterItems.currentSelectedSlot.Value == BackpackSlotIndex;
+    }
+
     private static void ClearCarriedBackpackLocally(Character carried)
     {
         carried.player.backpackSlot.EmptyOut();
         carried.refs.afflictions.UpdateWeight();
     }
 
-    private static void SuppressIncomingEmptyBackpackSync(Player player)
+    private static void TrackPendingBackpackTransfer(Character carrier, Character carried)
     {
-        if (player?.photonView == null)
+        if (carried.player?.photonView == null)
         {
             return;
         }
 
-        PendingBackpackTransferSyncSuppressions[player.photonView.ViewID] =
-            Time.realtimeSinceStartup + PendingBackpackTransferSyncSuppressionSeconds;
+        PendingBackpackTransferSyncSuppressions[carried.player.photonView.ViewID] = new PendingBackpackTransfer(
+            carrier,
+            carried,
+            Time.realtimeSinceStartup + PendingBackpackTransferSyncSuppressionSeconds);
+    }
+
+    private static void SyncPendingBackpackTransfer(int viewId, PendingBackpackTransfer pendingTransfer)
+    {
+        if (pendingTransfer.FinalSyncSent)
+        {
+            return;
+        }
+
+        pendingTransfer.FinalSyncSent = true;
+
+        if (!CanSyncInventory(pendingTransfer.Carrier.player)
+            || !CanSyncInventory(pendingTransfer.Carried.player)
+            || !HasBackpack(pendingTransfer.Carried)
+            || HasBackpack(pendingTransfer.Carrier))
+        {
+            Plugin.Log.LogWarning("Unable to send BuddyClimb backpack transfer final sync because the local transfer state is invalid.");
+            PendingBackpackTransferSyncSuppressions.Remove(viewId);
+            return;
+        }
+
+        PendingBackpackTransferSyncSuppressions.Remove(viewId);
+        SyncInventory(pendingTransfer.Carried.player);
+        SyncInventory(pendingTransfer.Carrier.player);
+        BuddyClimbCarryStarter.TryStartCarry(pendingTransfer.Carrier, pendingTransfer.Carried);
     }
 
     private static bool CanDropBackpackWithVanillaSlotDrop(Character character)
@@ -382,5 +523,23 @@ internal static class BackpackCarryTransfer
 
             player.backpackSlot = backpackSlot;
         }
+    }
+
+    private sealed class PendingBackpackTransfer
+    {
+        internal PendingBackpackTransfer(Character carrier, Character carried, float expiresAt)
+        {
+            Carrier = carrier;
+            Carried = carried;
+            ExpiresAt = expiresAt;
+        }
+
+        internal Character Carrier { get; }
+
+        internal Character Carried { get; }
+
+        internal float ExpiresAt { get; }
+
+        internal bool FinalSyncSent { get; set; }
     }
 }

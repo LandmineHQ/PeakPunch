@@ -93,12 +93,27 @@ internal static class CharacterCarryingPatch
             return true;
         }
 
-        if (carrierCharacter.data.carriedPlayer != null)
+        Character existingCarriedPlayer = carrierCharacter.data.carriedPlayer;
+        if (existingCarriedPlayer == carriedCharacter)
         {
-            __instance.Drop(carrierCharacter.data.carriedPlayer);
+            ApplyBuddyClimbCarryState(carrierCharacter, carriedCharacter);
             return false;
         }
 
+        if (existingCarriedPlayer != null)
+        {
+            Plugin.Log.LogDebug(
+                $"Ignoring BuddyClimb start carry for {carriedCharacter.characterName} because {carrierCharacter.characterName} is already carrying {existingCarriedPlayer.characterName}.");
+            return false;
+        }
+
+        ApplyBuddyClimbCarryState(carrierCharacter, carriedCharacter);
+
+        return false;
+    }
+
+    private static void ApplyBuddyClimbCarryState(Character carrierCharacter, Character carriedCharacter)
+    {
         carriedCharacter.refs.carriying.ToggleCarryPhysics(true);
         carriedCharacter.data.isCarried = true;
         carrierCharacter.data.carriedPlayer = carriedCharacter;
@@ -109,8 +124,6 @@ internal static class CharacterCarryingPatch
         {
             playerCharacter.refs.afflictions.UpdateWeight();
         }
-
-        return false;
     }
 
     [HarmonyPatch(nameof(CharacterCarrying.RPCA_StartCarry))]

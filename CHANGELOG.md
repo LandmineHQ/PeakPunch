@@ -4,8 +4,13 @@
 
 - Replaced BuddyClimb's backpack snapshot drop with PEAK's vanilla backpack slot drop before transferring the carrier backpack.
 - Suppressed stale empty-backpack inventory syncs during BuddyClimb backpack transfer.
+- Deferred BuddyClimb's carry-start RPC on non-master double-backpack transfers until after the final backpack inventory sync, preventing PEAK's vanilla carry RPC from dropping the carrier backpack as a duplicate.
+- Made BuddyClimb's carry-start patch idempotent for repeated start RPCs targeting the same carried player instead of turning the repeated start into an immediate drop.
 - Added rollback snapshots for failed BuddyClimb backpack transfers.
 - Show the local player's backpack contents while they are BuddyClimb-carried, then restore PEAK's normal first-person hiding after drop.
+- Hide the carried local player's on-back backpack again while they are holding their backpack slot.
+- Clear the carrier's held backpack visual through PEAK's existing held-item RPCs when BuddyClimb transfers that backpack to the carried player.
+- Limited BuddyClimb carried-spectator backpack visuals to the backpack's spawned item renderers, leaving PEAK's original backpack object visibility rules intact.
 
 ## 0.1.8
 

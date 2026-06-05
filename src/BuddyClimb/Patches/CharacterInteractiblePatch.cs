@@ -196,12 +196,19 @@ internal static class CharacterInteractiblePatch
             return false;
         }
 
-        if (!BackpackCarryTransfer.TryPrepareBackpacksForClimb(character, interactor))
+        BackpackPreparationResult preparationResult = BackpackCarryTransfer.PrepareBackpacksForClimb(
+            character,
+            interactor);
+        if (preparationResult == BackpackPreparationResult.Failed)
         {
-            return false;
+            return true;
         }
 
-        StartCarry(character, interactor);
+        if (preparationResult == BackpackPreparationResult.Ready)
+        {
+            BuddyClimbCarryStarter.TryStartCarry(character, interactor);
+        }
+
         return true;
     }
 
@@ -209,31 +216,7 @@ internal static class CharacterInteractiblePatch
     {
         return CanBeClimbed(carrier)
             && CanClimb(carried)
-            && CanCreateCarryLink(carrier, carried);
-    }
-
-    private static bool CanCreateCarryLink(Character carrier, Character carried)
-    {
-        if (carrier == null || carried == null)
-        {
-            return false;
-        }
-
-        Character currentCarrier = carrier;
-        while (true)
-        {
-            if (currentCarrier == carried)
-            {
-                return false;
-            }
-
-            if (currentCarrier.data?.carrier is not Character nextCarrier)
-            {
-                return true;
-            }
-
-            currentCarrier = nextCarrier;
-        }
+            && BuddyClimbCarryStarter.CanCreateCarryLink(carrier, carried);
     }
 
     private static bool IsBuddyClimbDropInteraction(Character character, Character interactor)
@@ -244,11 +227,4 @@ internal static class CharacterInteractiblePatch
             && CharacterCarryingPatch.IsBuddyClimbCarried(character);
     }
 
-    private static void StartCarry(Character carrier, Character carried)
-    {
-        carrier.photonView.RPC(
-            nameof(CharacterCarrying.RPCA_StartCarry),
-            RpcTarget.All,
-            carried.photonView);
-    }
 }
