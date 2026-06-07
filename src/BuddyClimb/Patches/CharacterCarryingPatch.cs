@@ -55,7 +55,7 @@ internal static class CharacterCarryingPatch
         Character carriedCharacter = targetView.GetComponent<Character>();
         if (carriedCharacter != null && IsBuddyClimbCarried(carriedCharacter))
         {
-            BuddyClimbRemotePassOutSync.RestoreRemoteCarryDrop(carriedCharacter);
+            BuddyClimbRemotePassOutSync.RestoreRemoteCarryDrop(carriedCharacter, "incoming RPCA_Drop");
         }
 
         BuddyClimbCarriedViewIds.Remove(targetView.ViewID);
@@ -155,6 +155,7 @@ internal static class CharacterCarryingPatch
         existingCarriedPlayer.data.isCarried = false;
         existingCarriedPlayer.data.carrier = null;
         carrierCharacter.data.carriedPlayer = null;
+        BuddyClimbRemotePassOutSync.RestoreRemoteCarryDrop(existingCarriedPlayer, "stale BuddyClimb carry cleanup");
         BuddyClimbCarriedViewIds.Remove(existingCarriedPlayer.photonView.ViewID);
         CarryInteractionProxy.Disable(existingCarriedPlayer);
         CarriedBackpackVisuals.HideIfForcedVisible(existingCarriedPlayer);

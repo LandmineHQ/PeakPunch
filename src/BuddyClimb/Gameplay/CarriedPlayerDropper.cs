@@ -47,6 +47,7 @@ internal static class CarriedPlayerDropper
         }
 
         ClearJumpInput(localCharacter);
+        BuddyClimbRemotePassOutSync.RestoreRemoteCarryDrop(localCharacter, "local Space drop request");
         carrierCarrying.Drop(localCharacter);
         ClearJumpInput(localCharacter);
         dropInputConsumedFrame = Time.frameCount;

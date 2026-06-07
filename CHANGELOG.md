@@ -4,6 +4,7 @@
 
 - Restored immediate BuddyClimb carry-start RPC sending after backpack preparation and removed sender-side stale carry-state gates that could prevent the carrier from receiving `RPCA_StartCarry`.
 - Added a remote-only vanilla pass-out/un-pass-out sync around BuddyClimb carry so unmodded carrier clients do not immediately drop a conscious local climber.
+- Made the remote-only un-pass-out sync idempotent and send it before local Space drop requests, with the incoming drop RPC kept as a fallback, to avoid vanilla clients keeping the climber in a passed-out state.
 
 ## 0.1.9
 

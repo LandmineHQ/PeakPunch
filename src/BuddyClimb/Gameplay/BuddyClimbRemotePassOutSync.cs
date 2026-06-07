@@ -22,7 +22,7 @@ internal static class BuddyClimbRemotePassOutSync
         carried.photonView.RPC(nameof(Character.RPCA_PassOut), RpcTarget.Others);
     }
 
-    internal static void RestoreRemoteCarryDrop(Character carried)
+    internal static void RestoreRemoteCarryDrop(Character carried, string reason)
     {
         if (carried?.photonView == null)
         {
@@ -30,19 +30,20 @@ internal static class BuddyClimbRemotePassOutSync
         }
 
         int viewId = carried.photonView.ViewID;
-        if (!RemotePassOutViewIds.Remove(viewId))
+        if (!RemotePassOutViewIds.Contains(viewId))
         {
             return;
         }
 
         if (!CanSyncLocalConsciousCharacter(carried))
         {
-            BuddyClimbDiagnostics.LogCarry($"Skipping remote-only un-pass-out sync after carry drop: {BuddyClimbDiagnostics.Describe(carried)}");
+            BuddyClimbDiagnostics.LogCarry($"Skipping remote-only un-pass-out sync for {reason}: {BuddyClimbDiagnostics.Describe(carried)}");
             return;
         }
 
-        BuddyClimbDiagnostics.LogCarry($"Sending remote-only {nameof(Character.RPCA_UnPassOut)} after carry drop: {BuddyClimbDiagnostics.Describe(carried)}");
+        BuddyClimbDiagnostics.LogCarry($"Sending remote-only {nameof(Character.RPCA_UnPassOut)} for {reason}: {BuddyClimbDiagnostics.Describe(carried)}");
         carried.photonView.RPC(nameof(Character.RPCA_UnPassOut), RpcTarget.Others);
+        RemotePassOutViewIds.Remove(viewId);
     }
 
     private static bool CanSyncLocalConsciousCharacter(Character character)
