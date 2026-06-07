@@ -138,13 +138,19 @@ internal static class DummyPlayerSpawner
         }
 
         int viewId = character.photonView.ViewID;
-        DummySpawnedViewIds.Remove(viewId);
-        LocallySpawnedDummyViewIdSet.Remove(viewId);
+        bool wasKnownDummy = DummySpawnedViewIds.Remove(viewId);
+        wasKnownDummy |= LocallySpawnedDummyViewIdSet.Remove(viewId);
         if (!DummyPlayersByCharacterViewId.TryGetValue(viewId, out DummyPlayerRecord record))
         {
+            if (wasKnownDummy)
+            {
+                DummyControlInteractionStateDriver.ResetForDummyRemoval();
+            }
+
             return;
         }
 
+        DummyControlInteractionStateDriver.ResetForDummyRemoval();
         DummyPlayersByCharacterViewId.Remove(viewId);
         DummyCharacterViewIdsByPlayer.Remove(record.Player);
         if (record.Player != null)
@@ -167,6 +173,7 @@ internal static class DummyPlayerSpawner
         }
 
         string characterName = character.characterName;
+        DummyControlInteractionStateDriver.ResetForDummyRemoval();
         if (PhotonNetwork.InRoom)
         {
             PhotonNetwork.Destroy(character.gameObject);

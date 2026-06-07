@@ -5,7 +5,6 @@ using HarmonyLib;
 using PeakDummyTools.Configuration;
 using PeakDummyTools.Localization;
 using Photon.Pun;
-using Photon.Voice.Unity;
 using UnityEngine;
 
 namespace PeakDummyTools.DummyPlayers;
@@ -22,20 +21,9 @@ internal static class DummyControlSwitcher
         typeof(MainCameraMovement),
         nameof(MainCameraMovement.specCharacter));
     private static readonly RaycastHit[] LineOfSightHits = new RaycastHit[LineOfSightHitBufferSize];
-    private static readonly Dictionary<Recorder, VoiceRecorderState> SavedVoiceRecorderStates = [];
 
     private static Character? originalLocalCharacter;
     private static Character? controlledCharacter;
-
-    private sealed class VoiceRecorderState
-    {
-        internal VoiceRecorderState(bool transmitEnabled)
-        {
-            TransmitEnabled = transmitEnabled;
-        }
-
-        internal bool TransmitEnabled { get; }
-    }
 
     internal static void Update()
     {
@@ -130,6 +118,12 @@ internal static class DummyControlSwitcher
     }
 
     internal static bool CanShowSwitchPrompt(Character character)
+    {
+        return PhotonNetwork.IsMasterClient
+            && CanSwitchToCharacter(character);
+    }
+
+    internal static bool CanSwitchToCharacter(Character character)
     {
         if (!CanUseDummyControl() || character == null || character == Character.localCharacter)
         {
@@ -269,7 +263,7 @@ internal static class DummyControlSwitcher
 
         Interaction interaction = Interaction.instance;
         if (interaction?.currentHovered is CharacterInteractible characterInteractible
-            && CanShowSwitchPrompt(characterInteractible.character))
+            && CanSwitchToCharacter(characterInteractible.character))
         {
             target = characterInteractible.character;
             return true;
@@ -307,7 +301,7 @@ internal static class DummyControlSwitcher
 
     private static bool TryFindLookTarget(out Character target)
     {
-        return TryFindLookTarget(out target, CanShowSwitchPrompt);
+        return TryFindLookTarget(out target, CanSwitchToCharacter);
     }
 
     private static bool TryFindLookTarget(out Character target, System.Func<Character, bool> canUseCandidate)
@@ -442,7 +436,7 @@ internal static class DummyControlSwitcher
 
     private static void SwitchControl(Character target)
     {
-        if (!CanShowSwitchPrompt(target))
+        if (!CanSwitchToCharacter(target))
         {
             return;
         }
@@ -477,19 +471,21 @@ internal static class DummyControlSwitcher
             Plugin.Log.LogWarning("Unable to restore local control because the original local character could not be found.");
             DummyControlPhotonViewAuthority.RestoreControlledView();
             controlledCharacter = null;
+            DummyControlInteractionStateDriver.ResetForControlSwitch();
             return;
         }
 
-        AssignLocalControl(originalLocal);
         controlledCharacter = null;
+        AssignLocalControl(originalLocal);
         Plugin.Log.LogInfo("Restored local control to the original local character.");
     }
 
     private static void AssignLocalControl(Character target)
     {
         Character previous = Character.localCharacter;
-        DummyControlLookSyncDriver.ResetRemoteLook(previous);
-        DummyControlLookSyncDriver.ResetRemoteLook(target);
+        DummyControlInteractionStateDriver.ResetForControlSwitch();
+        DummyControlLookSyncDriver.ResetRemoteState(previous);
+        DummyControlLookSyncDriver.ResetRemoteState(target);
         ResetInput(previous);
         ResetInput(target);
 
@@ -502,56 +498,13 @@ internal static class DummyControlSwitcher
 
         DummyControlPhotonViewAuthority.AssignWriteControl(target, originalLocalCharacter);
         SetSpecCharacterMethod?.Invoke(null, [null]);
-        AssignLocalVoiceRecorder(previous, target);
+        DummyControlVoiceDriver.AssignLocalVoiceRecorder(previous, target);
         if (!target.gameObject.activeSelf)
         {
             target.gameObject.SetActive(true);
         }
-    }
 
-    private static void AssignLocalVoiceRecorder(Character? previous, Character target)
-    {
-        Recorder? targetRecorder = target.GetComponentInChildren<Recorder>(true);
-        Recorder? previousRecorder = previous != null
-            ? previous.GetComponentInChildren<Recorder>(true)
-            : null;
-
-        if (targetRecorder == null)
-        {
-            Plugin.Log.LogWarning($"Unable to switch voice recorder because {target.characterName} has no Recorder component.");
-        }
-        else
-        {
-            VoiceClientHandler.LocalPlayerAssigned(targetRecorder);
-            RestoreSavedVoiceRecorderState(targetRecorder);
-        }
-
-        if (previousRecorder != null && previousRecorder != targetRecorder)
-        {
-            SaveVoiceRecorderState(previousRecorder);
-            previousRecorder.TransmitEnabled = false;
-        }
-    }
-
-    private static void SaveVoiceRecorderState(Recorder recorder)
-    {
-        if (recorder == null || SavedVoiceRecorderStates.ContainsKey(recorder))
-        {
-            return;
-        }
-
-        SavedVoiceRecorderStates.Add(recorder, new VoiceRecorderState(recorder.TransmitEnabled));
-    }
-
-    private static void RestoreSavedVoiceRecorderState(Recorder recorder)
-    {
-        if (recorder == null || !SavedVoiceRecorderStates.TryGetValue(recorder, out VoiceRecorderState state))
-        {
-            return;
-        }
-
-        SavedVoiceRecorderStates.Remove(recorder);
-        recorder.TransmitEnabled = state.TransmitEnabled;
+        DummyControlInteractionStateDriver.ResetForControlSwitch();
     }
 
     private static void ResetInput(Character? character)

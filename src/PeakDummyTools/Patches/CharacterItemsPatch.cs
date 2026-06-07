@@ -13,4 +13,18 @@ internal static class CharacterItemsPatch
     {
         return !DummyControlItemRpcDriver.TryHandleEquipSlot(__instance, slotID);
     }
+
+    [HarmonyPatch(nameof(CharacterItems.EquipSlotRpc))]
+    [HarmonyPrefix]
+    private static void EquipSlotRpcPrefix(CharacterItems __instance, int slotID)
+    {
+        DummyControlItemSelectionSyncDriver.ApplyRemoteEquipSelection(__instance, slotID);
+    }
+
+    [HarmonyPatch(nameof(CharacterItems.EquipSlotRpc))]
+    [HarmonyPostfix]
+    private static void EquipSlotRpcPostfix(CharacterItems __instance)
+    {
+        DummyControlItemSelectionSyncDriver.RefreshControlledSelectionUi(__instance);
+    }
 }
