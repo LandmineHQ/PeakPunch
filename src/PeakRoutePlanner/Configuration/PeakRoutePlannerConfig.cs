@@ -24,6 +24,8 @@ internal static class PeakRoutePlannerConfig
 
     internal static ConfigEntry<KeyboardShortcut> DebugSampleBlockShortcut { get; private set; } = null!;
 
+    internal static ConfigEntry<KeyboardShortcut> DebugVerticalAirColumnShortcut { get; private set; } = null!;
+
     internal static ConfigEntry<bool> RenderDebugAirCells { get; private set; } = null!;
 
     internal static void Bind(ConfigFile config)
@@ -32,6 +34,7 @@ internal static class PeakRoutePlannerConfig
         PlanRouteShortcut = config.Bind("Route Planner", "PlanRouteShortcut", new KeyboardShortcut(KeyCode.Comma, KeyCode.LeftAlt), "Shortcut used to invoke the route planner placeholder. Path planning is currently TODO; this shortcut only logs the local player and campfire target positions.");
         ClearRouteShortcut = config.Bind("Route Planner", "ClearRouteShortcut", new KeyboardShortcut(KeyCode.Period, KeyCode.LeftAlt), "Shortcut used to clear current sampling markers and cancel in-progress sampling.");
         DebugSampleBlockShortcut = config.Bind("Route Planner", "DebugSampleBlockShortcut", new KeyboardShortcut(KeyCode.Slash, KeyCode.LeftAlt), "Shortcut used to sample one surface block around the local player and render standable/climbable debug markers. Press again to clear existing markers.");
+        DebugVerticalAirColumnShortcut = config.Bind("Route Planner", "DebugVerticalAirColumnShortcut", new KeyboardShortcut(KeyCode.Slash, KeyCode.LeftControl), "Shortcut used to generate a vertical air-voxel column from the local player, probe downward at the first boundary, and render the air cells plus sampled surface point.");
         RenderDebugAirCells = config.Bind("Route Planner", "RenderDebugAirCells", false, "Render reachable air-boundary debug cubes when using DebugSampleBlockShortcut. Disabled by default because surface markers are usually enough after air-field validation.");
     }
 

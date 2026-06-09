@@ -62,6 +62,7 @@ internal sealed class SurfaceSampler
     private const int MaxGuidedDropDiscoveryProbesPerWindow = 24;
     private const int MaxDebugAirCellCenters = 24000;
     private const int MaxSurfaceAirBuildCellsPerFrame = 256;
+    private const int MaxVerticalAirColumnCells = 96;
     private const int MaxSurfaceMeshSnapshotTriangles = 30000;
     private static readonly float[] GapProbeDistanceMultipliers = [0.55f, 0.8f, 1f];
     private static readonly RaycastHit[] TerrainHitBuffer = new RaycastHit[128];
@@ -377,6 +378,94 @@ internal sealed class SurfaceSampler
 
     internal Quaternion ActiveSampleWindowRotation { get; private set; } = Quaternion.identity;
 
+    internal VerticalAirColumnDebugResult BuildVerticalAirColumnDebug(Vector3 seedPosition, PlannerConfig plannerConfig)
+    {
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        ResetStandaloneDebugState(plannerConfig);
+
+        float cellSize = SurfaceAirFieldCellSize;
+        Vector3 gridMin = seedPosition - Vector3.one * (cellSize * 0.5f);
+        int x = 0;
+        int z = 0;
+        int checkedCells = 1;
+        Vector3 currentCenter = SurfaceAirField.GetAirCellCenter(gridMin, x, 0, z, cellSize);
+        if (!SurfaceAirField.IsAirCellClear(gridMin, x, 0, z, cellSize, SurfaceAirProbeRadius, surfaceBlockerMask))
+        {
+            stopwatch.Stop();
+            return new VerticalAirColumnDebugResult(
+                seedPosition,
+                currentCenter,
+                currentCenter,
+                airCellCount: 0,
+                checkedCells,
+                rawHitCount: 0,
+                hasBoundary: false,
+                hasSurfacePoint: false,
+                SurfaceKind.Blocked,
+                "seed-air-cell-blocked",
+                stopwatch.Elapsed.TotalMilliseconds);
+        }
+
+        debugAirCellCenters.Add(currentCenter);
+        bool hasBoundary = false;
+        Vector3 boundaryCellCenter = currentCenter;
+        string reason = "max-depth";
+        for (int depth = 1; depth <= MaxVerticalAirColumnCells; depth++)
+        {
+            int y = -depth;
+            Vector3 nextCenter = SurfaceAirField.GetAirCellCenter(gridMin, x, y, z, cellSize);
+            checkedCells++;
+            if (!SurfaceAirField.IsAirCellClear(gridMin, x, y, z, cellSize, SurfaceAirProbeRadius, surfaceBlockerMask))
+            {
+                hasBoundary = true;
+                boundaryCellCenter = nextCenter;
+                reason = "blocked-air-cell";
+                break;
+            }
+
+            if (!SurfaceAirField.HasClearAirTransition(currentCenter, nextCenter, SurfaceAirProbeRadius, surfaceBlockerMask, cellSize))
+            {
+                hasBoundary = true;
+                boundaryCellCenter = nextCenter;
+                reason = "blocked-air-transition";
+                break;
+            }
+
+            debugAirCellCenters.Add(nextCenter);
+            currentCenter = nextCenter;
+        }
+
+        int rawHitCount = 0;
+        SurfaceKind surfaceKind = SurfaceKind.Blocked;
+        bool hasSurfacePoint = false;
+        if (hasBoundary)
+        {
+            hasSurfacePoint = TryAddVerticalAirBoundaryPoint(
+                currentCenter,
+                SurfaceAirField.GetAirBoundaryProbeDistance(cellSize),
+                out rawHitCount,
+                out surfaceKind);
+            if (!hasSurfacePoint)
+            {
+                reason += "-no-valid-surface-hit";
+            }
+        }
+
+        stopwatch.Stop();
+        return new VerticalAirColumnDebugResult(
+            seedPosition,
+            currentCenter,
+            boundaryCellCenter,
+            debugAirCellCenters.Count,
+            checkedCells,
+            rawHitCount,
+            hasBoundary,
+            hasSurfacePoint,
+            surfaceKind,
+            reason,
+            stopwatch.Elapsed.TotalMilliseconds);
+    }
+
     internal void Begin(
         Vector3 start,
         Vector3 target,
@@ -572,6 +661,40 @@ internal sealed class SurfaceSampler
         {
             RequeueCachedFrontierSeeds(includeTargetFrontier);
         }
+    }
+
+    private void ResetStandaloneDebugState(PlannerConfig plannerConfig)
+    {
+        config = plannerConfig;
+        staminaModel = new VanillaStaminaModel(config);
+        terrainMask = HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap);
+        collisionMask = HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysicalExceptCharacter);
+        surfaceBlockerMask = terrainMask | collisionMask;
+
+        processedRayKeys.Clear();
+        pendingRayKeys.Clear();
+        expandedSeedKeys.Clear();
+        pointIdsByKey.Clear();
+        standableClearanceByCell.Clear();
+        queuedStandableWallProbeCells.Clear();
+        queuedClimbableProbeCells.Clear();
+        queuedGapProbeDirections.Clear();
+        points.Clear();
+        hitCandidates.Clear();
+        debugAirCellCenters.Clear();
+        while (pendingRayOrigins.Count > 0)
+        {
+            pendingRayOrigins.Dequeue();
+        }
+
+        activeSurfaceAirField = null;
+        activeSurfaceAirBuilder = null;
+        activeSurfaceMeshField = null;
+        rayGenerationComplete = true;
+        StartIndex = -1;
+        TargetIndex = -1;
+        HasActiveSeedPreview = false;
+        ActiveSeedPreviewPosition = default;
     }
 
     internal bool ProcessFrame()
@@ -876,6 +999,59 @@ internal sealed class SurfaceSampler
         return kind == SurfaceKind.Standable && !VanillaSurfaceRules.AllowsStandableBody(hit.rigidbody)
             ? SurfaceKind.Blocked
             : kind;
+    }
+
+    private bool TryAddVerticalAirBoundaryPoint(
+        Vector3 airCellCenter,
+        float probeDistance,
+        out int rawHitCount,
+        out SurfaceKind surfaceKind)
+    {
+        rawHitCount = Physics.RaycastNonAlloc(
+            airCellCenter,
+            Vector3.down,
+            TerrainHitBuffer,
+            probeDistance,
+            surfaceBlockerMask,
+            QueryTriggerInteraction.Ignore);
+        surfaceKind = SurfaceKind.Blocked;
+
+        int bestIndex = -1;
+        float bestDistance = float.MaxValue;
+        for (int index = 0; index < rawHitCount; index++)
+        {
+            RaycastHit hit = TerrainHitBuffer[index];
+            Collider collider = hit.collider;
+            if (collider == null || hit.distance >= bestDistance)
+            {
+                continue;
+            }
+
+            SurfaceKind kind = ClassifySurfaceHit(hit);
+            if (kind == SurfaceKind.Blocked)
+            {
+                continue;
+            }
+
+            HitCandidate candidate = new(hit.point, hit.normal, collider.GetInstanceID(), kind, hit.distance);
+            if (IsOccludedStandableSurface(candidate))
+            {
+                continue;
+            }
+
+            bestIndex = index;
+            bestDistance = hit.distance;
+            surfaceKind = kind;
+        }
+
+        if (bestIndex < 0)
+        {
+            return false;
+        }
+
+        RaycastHit bestHit = TerrainHitBuffer[bestIndex];
+        int colliderId = bestHit.collider != null ? bestHit.collider.GetInstanceID() : 0;
+        return AddPoint(bestHit.point, bestHit.normal, colliderId, surfaceKind, forceKeep: true) >= 0;
     }
 
     private void AddFilteredHits(int hitCount, SurfaceQuery query)
@@ -2543,7 +2719,7 @@ internal sealed class SurfaceSampler
         SurfaceAirBoundaryProbeSourceCount += airField.BoundaryProbeCount;
         SurfaceAirSliceAdvanceCount += airField.SliceAdvanceCount;
         SurfaceAirMaxReachableCellCount = Mathf.Max(SurfaceAirMaxReachableCellCount, airField.ReachableCellCount);
-        airField.CopyReachableCellCenters(
+        airField.CopyBoundaryCellCenters(
             debugAirCellCenters,
             Mathf.Max(0, MaxDebugAirCellCenters - debugAirCellCenters.Count));
         QueueAirBoundarySurfaceProbes();

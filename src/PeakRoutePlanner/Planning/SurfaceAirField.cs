@@ -8,6 +8,9 @@ internal sealed class SurfaceAirField
 {
     private static readonly RaycastHit[] TransitionHitBuffer = new RaycastHit[8];
     private static readonly Collider[] PocketColliderBuffer = new Collider[16];
+    // Boundary probes intentionally span beyond one neighboring voxel. Adjacent boundary probes can
+    // meet a surface at an angle, so constraining the ray to one cell can miss valid exterior faces.
+    private const float BoundaryProbeDistanceMultiplier = 2f;
     private static readonly Vector3Int[] NeighborOffsets =
     [
         new(1, 0, 0),
@@ -97,7 +100,7 @@ internal sealed class SurfaceAirField
 
     internal double BuildMilliseconds { get; }
 
-    internal int CopyReachableCellCenters(List<Vector3> target, int maxCount)
+    internal int CopyBoundaryCellCenters(List<Vector3> target, int maxCount)
     {
         if (maxCount <= 0)
         {
@@ -206,6 +209,66 @@ internal sealed class SurfaceAirField
             maxReachableCells,
             maxScanForwardHalfExtent,
             sharedCache);
+    }
+
+    internal static Vector3 AlignAirGridMin(Vector3 min, float cellSize)
+    {
+        return AlignMinToWorldGrid(min, cellSize);
+    }
+
+    internal static Vector3 GetAirCellCenter(Vector3 min, int x, int y, int z, float cellSize)
+    {
+        return GetCellCenter(new AirCellKey(x, y, z), min, cellSize);
+    }
+
+    internal static bool IsAirCellClear(
+        Vector3 min,
+        int x,
+        int y,
+        int z,
+        float cellSize,
+        float probeRadius,
+        int collisionMask)
+    {
+        Dictionary<AirCellKey, bool> clearCells = [];
+        int checkedCellCount = 0;
+        int blockedCellCount = 0;
+        int clearCellCacheHitCount = 0;
+        AirCellKey key = new(x, y, z);
+        return IsClearCell(
+            key,
+            GetCellCenter(key, min, cellSize),
+            cellSize,
+            probeRadius,
+            collisionMask,
+            clearCells,
+            sharedCache: null,
+            ref checkedCellCount,
+            ref blockedCellCount,
+            ref clearCellCacheHitCount);
+    }
+
+    internal static bool HasClearAirTransition(
+        Vector3 from,
+        Vector3 to,
+        float probeRadius,
+        int collisionMask,
+        float cellSize)
+    {
+        int clearTransitionCacheHitCount = 0;
+        return HasClearTransition(
+            from,
+            to,
+            probeRadius,
+            collisionMask,
+            cellSize,
+            sharedCache: null,
+            ref clearTransitionCacheHitCount);
+    }
+
+    internal static float GetAirBoundaryProbeDistance(float cellSize)
+    {
+        return GetBoundaryProbeDistance(cellSize);
     }
 
     internal bool HasReachableNormalPocket(Vector3 surfacePosition, Vector3 normal, int surfaceColliderId)
@@ -1001,7 +1064,7 @@ internal sealed class SurfaceAirField
                 return;
             }
 
-            AirBoundaryProbe probe = new(origin, direction, cellSize * 1.5f);
+            AirBoundaryProbe probe = new(origin, direction, GetBoundaryProbeDistance(cellSize));
             boundaryProbes.Add(probe);
             pendingBoundaryProbes.Enqueue(probe);
             if (boundaryCells.Add(cell))
@@ -1088,7 +1151,7 @@ internal sealed class SurfaceAirField
                     continue;
                 }
 
-                boundaryProbes.Add(new AirBoundaryProbe(origin, direction, cellSize * 1.5f));
+                boundaryProbes.Add(new AirBoundaryProbe(origin, direction, GetBoundaryProbeDistance(cellSize)));
                 isBoundaryCell = true;
             }
 
@@ -1305,6 +1368,11 @@ internal sealed class SurfaceAirField
                 return hash;
             }
         }
+    }
+
+    private static float GetBoundaryProbeDistance(float cellSize)
+    {
+        return Mathf.Max(0.1f, cellSize * BoundaryProbeDistanceMultiplier);
     }
 
     internal readonly struct AirBoundaryProbe

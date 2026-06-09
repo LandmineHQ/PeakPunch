@@ -31,6 +31,57 @@ public readonly struct SurfacePoint
     public SurfaceKind Kind { get; }
 }
 
+public readonly struct VerticalAirColumnDebugResult
+{
+    public VerticalAirColumnDebugResult(
+        Vector3 seedPosition,
+        Vector3 probeOrigin,
+        Vector3 blockedCellCenter,
+        int airCellCount,
+        int checkedCellCount,
+        int rawHitCount,
+        bool hasBoundary,
+        bool hasSurfacePoint,
+        SurfaceKind surfaceKind,
+        string reason,
+        double elapsedMilliseconds)
+    {
+        SeedPosition = seedPosition;
+        ProbeOrigin = probeOrigin;
+        BlockedCellCenter = blockedCellCenter;
+        AirCellCount = airCellCount;
+        CheckedCellCount = checkedCellCount;
+        RawHitCount = rawHitCount;
+        HasBoundary = hasBoundary;
+        HasSurfacePoint = hasSurfacePoint;
+        SurfaceKind = surfaceKind;
+        Reason = reason;
+        ElapsedMilliseconds = elapsedMilliseconds;
+    }
+
+    public Vector3 SeedPosition { get; }
+
+    public Vector3 ProbeOrigin { get; }
+
+    public Vector3 BlockedCellCenter { get; }
+
+    public int AirCellCount { get; }
+
+    public int CheckedCellCount { get; }
+
+    public int RawHitCount { get; }
+
+    public bool HasBoundary { get; }
+
+    public bool HasSurfacePoint { get; }
+
+    public SurfaceKind SurfaceKind { get; }
+
+    public string Reason { get; }
+
+    public double ElapsedMilliseconds { get; }
+}
+
 public sealed class PlannerConfig
 {
     public float CorridorRadiusStep { get; set; }

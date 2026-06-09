@@ -80,7 +80,7 @@ internal sealed class SurfaceSampleDebugRenderer
 
             GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             marker.name = $"PeakRoutePlanner Sample {point.Kind}";
-            marker.transform.position = point.Position + point.Normal.normalized * 0.08f;
+            marker.transform.position = point.Position;
             marker.transform.localScale = Vector3.one * MarkerScale;
 
             Collider? collider = marker.GetComponent<Collider>();

@@ -47,6 +47,11 @@ internal sealed class RoutePlannerRuntime
             TogglePlayerForwardSampling();
         }
 
+        if (PeakRoutePlannerConfig.DebugVerticalAirColumnShortcut.Value.IsDown())
+        {
+            RunVerticalAirColumnDebug();
+        }
+
         if (PeakRoutePlannerConfig.PlanRouteShortcut.Value.IsDown())
         {
             InvokeRoutePlannerPlaceholder();
@@ -92,6 +97,24 @@ internal sealed class RoutePlannerRuntime
             playerPosition + forward.normalized * PlannerDefaults.DefaultSamplingGuideDistance,
             "debug surface block sampling",
             prioritizeGuidedSampling: false);
+    }
+
+    private void RunVerticalAirColumnDebug()
+    {
+        CleanupSampling("vertical-air-column-debug");
+        if (!TryGetLocalPlayerPosition(out Vector3 playerPosition, out Character localCharacter))
+        {
+            Plugin.Log.LogWarning("Vertical air-column debug skipped because Character.localCharacter is unavailable.");
+            return;
+        }
+
+        config = PlannerDefaults.ToPlannerConfig(localCharacter);
+        VerticalAirColumnDebugResult result = sampler.BuildVerticalAirColumnDebug(playerPosition, config);
+        sampleRenderer.Render(sampler.Points, sampler.DebugAirCellCenters);
+        hasRenderedSamples = sampler.Points.Count > 0 || sampler.DebugAirCellCenters.Count > 0;
+
+        Plugin.Log.LogInfo(
+            $"Vertical air-column debug complete: seed=({result.SeedPosition.x:0.00},{result.SeedPosition.y:0.00},{result.SeedPosition.z:0.00}), probeOrigin=({result.ProbeOrigin.x:0.00},{result.ProbeOrigin.y:0.00},{result.ProbeOrigin.z:0.00}), blockedCell=({result.BlockedCellCenter.x:0.00},{result.BlockedCellCenter.y:0.00},{result.BlockedCellCenter.z:0.00}), airCells={result.AirCellCount}, checkedCells={result.CheckedCellCount}, rawHits={result.RawHitCount}, hasBoundary={result.HasBoundary}, hasSurfacePoint={result.HasSurfacePoint}, surfaceKind={result.SurfaceKind}, reason={result.Reason}, elapsedMs={result.ElapsedMilliseconds:0.00}.");
     }
 
     private void InvokeRoutePlannerPlaceholder()
