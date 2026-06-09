@@ -13,11 +13,21 @@ public sealed class Plugin : BaseUnityPlugin
     internal const string PluginId = "com.github.LandmineHQ.PeakRoutePlanner";
     internal const string PluginName = "PeakRoutePlanner";
     internal const string PluginVersion = "0.1.0";
+    internal const string RoutePlannerBuildMarker = "surface-sampling-tool-20260610";
 
     internal static ManualLogSource Log { get; private set; } = null!;
 
+    internal static void LogTiming(string message)
+    {
+#if DEBUG
+        Log.LogInfo(message);
+#else
+        Log.LogDebug(message);
+#endif
+    }
+
     private RoutePlannerRuntime? runtime;
-    private RoutePathRenderer? pathRenderer;
+    private SamplingWindowRenderer? samplingWindowRenderer;
 
     private void Awake()
     {
@@ -26,12 +36,12 @@ public sealed class Plugin : BaseUnityPlugin
         PeakRoutePlannerConfig.Bind(Config);
         PeakRoutePlannerConfig.EnableHotReload(Config);
 
-        pathRenderer = new RoutePathRenderer();
-        runtime = new RoutePlannerRuntime(pathRenderer);
+        samplingWindowRenderer = new SamplingWindowRenderer();
+        runtime = new RoutePlannerRuntime(samplingWindowRenderer);
 
         new Harmony(PluginId).PatchAll(typeof(Plugin).Assembly);
 
-        Log.LogInfo($"Plugin {PluginName} is loaded!");
+        Log.LogInfo($"Plugin {PluginName} is loaded! build={RoutePlannerBuildMarker}");
     }
 
     private void Update()
@@ -43,8 +53,8 @@ public sealed class Plugin : BaseUnityPlugin
     {
         runtime?.Cleanup();
         runtime = null;
-        pathRenderer?.Cleanup();
-        pathRenderer = null;
+        samplingWindowRenderer?.Cleanup();
+        samplingWindowRenderer = null;
         PeakRoutePlannerConfig.DisableHotReload();
     }
 }
