@@ -31,6 +31,44 @@ public readonly struct SurfacePoint
     public SurfaceKind Kind { get; }
 }
 
+
+internal enum RouteEdgeKind
+{
+    None,
+    SameRegion,
+    StandWalk,
+    StandJump,
+}
+
+internal readonly struct RouteEdgeValidationResult
+{
+    internal RouteEdgeValidationResult(bool isValid, RouteEdgeKind kind, string reason, float distance)
+    {
+        IsValid = isValid;
+        Kind = kind;
+        Reason = reason;
+        Distance = distance;
+    }
+
+    internal bool IsValid { get; }
+
+    internal RouteEdgeKind Kind { get; }
+
+    internal string Reason { get; }
+
+    internal float Distance { get; }
+
+    internal static RouteEdgeValidationResult Valid(RouteEdgeKind kind, float distance)
+    {
+        return new RouteEdgeValidationResult(true, kind, string.Empty, distance);
+    }
+
+    internal static RouteEdgeValidationResult Invalid(string reason, float distance = 0f)
+    {
+        return new RouteEdgeValidationResult(false, RouteEdgeKind.None, reason, distance);
+    }
+}
+
 public readonly struct VerticalAirColumnDebugResult
 {
     public VerticalAirColumnDebugResult(
@@ -77,9 +115,25 @@ public readonly struct VerticalAirColumnDebugResult
 
     public SurfaceKind SurfaceKind { get; }
 
-    public string Reason { get; }
+    internal string Reason { get; }
 
     public double ElapsedMilliseconds { get; }
+}
+
+public readonly struct DebugAirBoundaryProbe
+{
+    public DebugAirBoundaryProbe(Vector3 origin, Vector3 direction, float distance)
+    {
+        Origin = origin;
+        Direction = direction;
+        Distance = distance;
+    }
+
+    public Vector3 Origin { get; }
+
+    public Vector3 Direction { get; }
+
+    internal float Distance { get; }
 }
 
 public sealed class PlannerConfig

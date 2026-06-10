@@ -1008,13 +1008,32 @@ internal sealed class SurfaceAirField
                 || neighbor.Z < 0
                 || neighbor.X >= sizeX
                 || neighbor.Y >= sizeY
-                || neighbor.Z >= sizeZ
-                || reachableCells.Contains(neighbor))
+                || neighbor.Z >= sizeZ)
             {
                 return;
             }
 
             Vector3 neighborCenter = GetCellCenter(neighbor, min, cellSize);
+            bool neighborReachable = reachableCells.Contains(neighbor);
+            if (neighborReachable)
+            {
+                if (!IsVerticalDownOffset(offset)
+                    || HasClearTransition(
+                        origin,
+                        neighborCenter,
+                        probeRadius,
+                        collisionMask,
+                        cellSize,
+                        sharedCache,
+                        ref clearTransitionCacheHitCount))
+                {
+                    return;
+                }
+
+                QueueBoundaryProbe(cell, origin, Vector3.down);
+                return;
+            }
+
             if (!IsInsideScanEllipsoid(
                     neighborCenter,
                     scanOrigin,
@@ -1037,22 +1056,35 @@ internal sealed class SurfaceAirField
                 return;
             }
 
-            if (IsClearCell(
-                    neighbor,
+            bool neighborClear = IsClearCell(
+                neighbor,
+                neighborCenter,
+                cellSize,
+                probeRadius,
+                collisionMask,
+                clearCells,
+                sharedCache,
+                ref checkedCellCount,
+                ref blockedCellCount,
+                ref clearCellCacheHitCount);
+            if (neighborClear
+                && HasClearTransition(
+                    origin,
                     neighborCenter,
-                    cellSize,
                     probeRadius,
                     collisionMask,
-                    clearCells,
+                    cellSize,
                     sharedCache,
-                    ref checkedCellCount,
-                    ref blockedCellCount,
-                    ref clearCellCacheHitCount))
+                    ref clearTransitionCacheHitCount))
             {
                 return;
             }
 
-            Vector3 direction = new(offset.x, offset.y, offset.z);
+            QueueBoundaryProbe(cell, origin, new Vector3(offset.x, offset.y, offset.z));
+        }
+
+        private void QueueBoundaryProbe(AirCellKey cell, Vector3 origin, Vector3 direction)
+        {
             if (direction.sqrMagnitude < 0.001f)
             {
                 return;
@@ -1127,32 +1159,66 @@ internal sealed class SurfaceAirField
                     || neighbor.Z < 0
                     || neighbor.X >= sizeX
                     || neighbor.Y >= sizeY
-                    || neighbor.Z >= sizeZ
-                    || reachableCells.Contains(neighbor))
+                    || neighbor.Z >= sizeZ)
                 {
                     continue;
                 }
 
                 Vector3 neighborCenter = GetCellCenter(neighbor, min, cellSize);
-                if (!Physics.CheckSphere(neighborCenter, probeRadius, collisionMask, QueryTriggerInteraction.Ignore))
+                bool neighborReachable = reachableCells.Contains(neighbor);
+                if (neighborReachable)
+                {
+                    int reachableTransitionCacheHitCount = 0;
+                    if (!IsVerticalDownOffset(offset)
+                        || HasClearTransition(
+                            origin,
+                            neighborCenter,
+                            probeRadius,
+                            collisionMask,
+                            cellSize,
+                            sharedCache: null,
+                            ref reachableTransitionCacheHitCount))
+                    {
+                        continue;
+                    }
+
+                    if (QueueBoundaryProbe(
+                            boundaryProbes,
+                            queuedBoundaries,
+                            origin,
+                            Vector3.down,
+                            cellSize))
+                    {
+                        isBoundaryCell = true;
+                    }
+
+                    continue;
+                }
+
+                bool neighborClear = !Physics.CheckSphere(neighborCenter, probeRadius, collisionMask, QueryTriggerInteraction.Ignore);
+                int clearTransitionCacheHitCount = 0;
+                if (neighborClear
+                    && HasClearTransition(
+                        origin,
+                        neighborCenter,
+                        probeRadius,
+                        collisionMask,
+                        cellSize,
+                        sharedCache: null,
+                        ref clearTransitionCacheHitCount))
                 {
                     continue;
                 }
 
-                Vector3 direction = new(offset.x, offset.y, offset.z);
-                if (direction.sqrMagnitude < 0.001f)
+                if (QueueBoundaryProbe(
+                        boundaryProbes,
+                        queuedBoundaries,
+                        origin,
+                        new Vector3(offset.x, offset.y, offset.z),
+                        cellSize))
                 {
-                    continue;
+                    isBoundaryCell = true;
                 }
-
-                direction.Normalize();
-                if (!queuedBoundaries.Add(BoundaryProbeKey.From(origin + direction * (cellSize * 0.5f), direction, cellSize)))
-                {
-                    continue;
-                }
-
-                boundaryProbes.Add(new AirBoundaryProbe(origin, direction, GetBoundaryProbeDistance(cellSize)));
-                isBoundaryCell = true;
             }
 
             if (isBoundaryCell && boundaryCells.Add(cell))
@@ -1160,6 +1226,33 @@ internal sealed class SurfaceAirField
                 boundaryCellCenters.Add(origin);
             }
         }
+    }
+
+    private static bool QueueBoundaryProbe(
+        List<AirBoundaryProbe> boundaryProbes,
+        HashSet<BoundaryProbeKey> queuedBoundaries,
+        Vector3 origin,
+        Vector3 direction,
+        float cellSize)
+    {
+        if (direction.sqrMagnitude < 0.001f)
+        {
+            return false;
+        }
+
+        direction.Normalize();
+        if (!queuedBoundaries.Add(BoundaryProbeKey.From(origin + direction * (cellSize * 0.5f), direction, cellSize)))
+        {
+            return false;
+        }
+
+        boundaryProbes.Add(new AirBoundaryProbe(origin, direction, GetBoundaryProbeDistance(cellSize)));
+        return true;
+    }
+
+    private static bool IsVerticalDownOffset(Vector3Int offset)
+    {
+        return offset.x == 0 && offset.y < 0 && offset.z == 0;
     }
 
     private readonly struct AirCellKey : System.IEquatable<AirCellKey>

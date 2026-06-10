@@ -61,6 +61,7 @@ internal sealed class SurfaceSampler
     private const int MaxGuidedGapProbesPerWindow = 24;
     private const int MaxGuidedDropDiscoveryProbesPerWindow = 24;
     private const int MaxDebugAirCellCenters = 24000;
+    private const int MaxDebugAirBoundaryProbes = 12000;
     private const int MaxSurfaceAirBuildCellsPerFrame = 256;
     private const int MaxVerticalAirColumnCells = 96;
     private const int MaxSurfaceMeshSnapshotTriangles = 30000;
@@ -102,6 +103,7 @@ internal sealed class SurfaceSampler
     private readonly List<Collider> activeWindowColliders = [];
     private readonly HashSet<int> activeWindowColliderIds = [];
     private readonly List<Vector3> debugAirCellCenters = [];
+    private readonly List<DebugAirBoundaryProbe> debugAirBoundaryProbes = [];
     private readonly List<ProbeDirection> orderedProbeDirections = [];
     private readonly SurfaceProbeBody probeBody = new();
 
@@ -171,6 +173,8 @@ internal sealed class SurfaceSampler
     internal IReadOnlyList<SurfacePoint> Points => points;
 
     internal IReadOnlyList<Vector3> DebugAirCellCenters => debugAirCellCenters;
+
+    internal IReadOnlyList<DebugAirBoundaryProbe> DebugAirBoundaryProbes => debugAirBoundaryProbes;
 
     internal int StartIndex { get; private set; }
 
@@ -262,9 +266,39 @@ internal sealed class SurfaceSampler
 
     internal int SurfaceAirBoundaryProbeSkippedWindowCount { get; private set; }
 
+    internal int SurfaceAirBoundaryProbeSkippedDuplicateCount { get; private set; }
+
+    internal int SurfaceAirBoundaryRawHitCount { get; private set; }
+
+    internal int SurfaceAirBoundaryZeroHitCount { get; private set; }
+
+    internal int SurfaceAirBoundaryProbeQueuedDownCount { get; private set; }
+
+    internal int SurfaceAirBoundaryProbeQueuedUpCount { get; private set; }
+
+    internal int SurfaceAirBoundaryProbeQueuedSideCount { get; private set; }
+
+    internal int SurfaceAirBoundaryProbeWindowSkippedDownCount { get; private set; }
+
+    internal int SurfaceAirBoundaryProbeWindowSkippedUpCount { get; private set; }
+
+    internal int SurfaceAirBoundaryProbeWindowSkippedSideCount { get; private set; }
+
     internal int SurfaceAirBoundaryPointCount { get; private set; }
 
     internal int SurfaceAirBoundaryStandablePointCount { get; private set; }
+
+    internal int SurfaceAirBoundaryPointDownCount { get; private set; }
+
+    internal int SurfaceAirBoundaryPointUpCount { get; private set; }
+
+    internal int SurfaceAirBoundaryPointSideCount { get; private set; }
+
+    internal int SurfaceAirBoundaryStandableDownCount { get; private set; }
+
+    internal int SurfaceAirBoundaryStandableUpCount { get; private set; }
+
+    internal int SurfaceAirBoundaryStandableSideCount { get; private set; }
 
     internal int SurfaceAirMaxReachableCellCount { get; private set; }
 
@@ -440,6 +474,10 @@ internal sealed class SurfaceSampler
         bool hasSurfacePoint = false;
         if (hasBoundary)
         {
+            debugAirBoundaryProbes.Add(new DebugAirBoundaryProbe(
+                currentCenter,
+                Vector3.down,
+                SurfaceAirField.GetAirBoundaryProbeDistance(cellSize)));
             hasSurfacePoint = TryAddVerticalAirBoundaryPoint(
                 currentCenter,
                 SurfaceAirField.GetAirBoundaryProbeDistance(cellSize),
@@ -532,6 +570,7 @@ internal sealed class SurfaceSampler
         if (!preserveSampleCache)
         {
             debugAirCellCenters.Clear();
+            debugAirBoundaryProbes.Clear();
         }
 
         activeSurfaceAirField = null;
@@ -578,8 +617,23 @@ internal sealed class SurfaceSampler
         SurfaceAirBoundaryProbeSourceCount = 0;
         SurfaceAirBoundaryProbeQueuedCount = 0;
         SurfaceAirBoundaryProbeSkippedWindowCount = 0;
+        SurfaceAirBoundaryProbeSkippedDuplicateCount = 0;
+        SurfaceAirBoundaryRawHitCount = 0;
+        SurfaceAirBoundaryZeroHitCount = 0;
+        SurfaceAirBoundaryProbeQueuedDownCount = 0;
+        SurfaceAirBoundaryProbeQueuedUpCount = 0;
+        SurfaceAirBoundaryProbeQueuedSideCount = 0;
+        SurfaceAirBoundaryProbeWindowSkippedDownCount = 0;
+        SurfaceAirBoundaryProbeWindowSkippedUpCount = 0;
+        SurfaceAirBoundaryProbeWindowSkippedSideCount = 0;
         SurfaceAirBoundaryPointCount = 0;
         SurfaceAirBoundaryStandablePointCount = 0;
+        SurfaceAirBoundaryPointDownCount = 0;
+        SurfaceAirBoundaryPointUpCount = 0;
+        SurfaceAirBoundaryPointSideCount = 0;
+        SurfaceAirBoundaryStandableDownCount = 0;
+        SurfaceAirBoundaryStandableUpCount = 0;
+        SurfaceAirBoundaryStandableSideCount = 0;
         SurfaceAirMaxReachableCellCount = 0;
         SurfaceAirCheckedCellCount = 0;
         SurfaceAirBlockedCellCount = 0;
@@ -682,6 +736,7 @@ internal sealed class SurfaceSampler
         points.Clear();
         hitCandidates.Clear();
         debugAirCellCenters.Clear();
+        debugAirBoundaryProbes.Clear();
         while (pendingRayOrigins.Count > 0)
         {
             pendingRayOrigins.Dequeue();
@@ -755,6 +810,14 @@ internal sealed class SurfaceSampler
             long raycastStart = Stopwatch.GetTimestamp();
             int hitCount = RaycastQuery(query);
             AddProfileTicks(ref profileRaycastTicks, raycastStart);
+            if (query.Kind == QueryKind.AirBoundary)
+            {
+                SurfaceAirBoundaryRawHitCount += hitCount;
+                if (hitCount <= 0)
+                {
+                    SurfaceAirBoundaryZeroHitCount++;
+                }
+            }
 
             long filterStart = Stopwatch.GetTimestamp();
             AddFilteredHits(hitCount, query);
@@ -903,7 +966,11 @@ internal sealed class SurfaceSampler
     private int RaycastQuery(SurfaceQuery query)
     {
         RaycastQueryCount++;
-        if (query.Kind == QueryKind.Vertical || query.Kind == QueryKind.GapLanding || query.Kind == QueryKind.DropDiscovery)
+        bool useGlobalRaycast = query.Kind == QueryKind.Vertical
+            || query.Kind == QueryKind.GapLanding
+            || query.Kind == QueryKind.DropDiscovery
+            || (query.Kind == QueryKind.AirBoundary && IsDownwardProbeDirection(query.Direction));
+        if (useGlobalRaycast)
         {
             return Physics.RaycastNonAlloc(
                 query.Origin,
@@ -1104,7 +1171,7 @@ internal sealed class SurfaceSampler
 
             CandidateHitCount++;
             HitCandidate candidate = new(hit.point, hit.normal, colliderId, kind, hit.distance);
-            if (!PassesSurfaceAirPocket(candidate))
+            if (query.Kind != QueryKind.AirBoundary && !PassesSurfaceAirPocket(candidate))
             {
                 continue;
             }
@@ -1184,7 +1251,12 @@ internal sealed class SurfaceSampler
                 continue;
             }
 
-            int pointId = AddPoint(candidate.Position, candidate.Normal, candidate.ColliderId, candidate.Kind);
+            int pointId = AddPoint(
+                candidate.Position,
+                candidate.Normal,
+                candidate.ColliderId,
+                candidate.Kind,
+                forceKeep: query.Kind == QueryKind.AirBoundary);
             if (pointId >= 0)
             {
                 if (query.Kind == QueryKind.GapLanding)
@@ -1239,15 +1311,22 @@ internal sealed class SurfaceSampler
         }
 
         HitCandidate best = hitCandidates[bestIndex];
-        int pointId = AddPoint(best.Position, best.Normal, best.ColliderId, best.Kind);
+        int pointId = AddPoint(
+            best.Position,
+            best.Normal,
+            best.ColliderId,
+            best.Kind,
+            forceKeep: query.Kind == QueryKind.AirBoundary);
         if (pointId >= 0)
         {
             if (query.Kind == QueryKind.AirBoundary)
             {
                 SurfaceAirBoundaryPointCount++;
+                IncrementAirBoundaryPointDirection(query.Direction);
                 if (best.Kind == SurfaceKind.Standable)
                 {
                     SurfaceAirBoundaryStandablePointCount++;
+                    IncrementAirBoundaryStandableDirection(query.Direction);
                 }
             }
 
@@ -2267,6 +2346,159 @@ internal sealed class SurfaceSampler
         }
     }
 
+    internal RouteEdgeValidationResult ValidateStandableEdge(SurfacePoint source, SurfacePoint target)
+    {
+        float distance = Vector3.Distance(source.Position, target.Position);
+        if (source.Id == target.Id || distance <= 0.05f)
+        {
+            return RouteEdgeValidationResult.Valid(RouteEdgeKind.SameRegion, distance);
+        }
+
+        if (source.Kind != SurfaceKind.Standable || target.Kind != SurfaceKind.Standable)
+        {
+            return RouteEdgeValidationResult.Invalid("non-standable", distance);
+        }
+
+        if (config == null)
+        {
+            return RouteEdgeValidationResult.Invalid("sampler-not-initialized", distance);
+        }
+
+        HitCandidate candidate = new(
+            target.Position,
+            target.Normal.sqrMagnitude > 0.001f ? target.Normal.normalized : Vector3.up,
+            target.ColliderId,
+            target.Kind,
+            distance);
+
+        Vector3 delta = target.Position - source.Position;
+        Vector3 direction = delta.sqrMagnitude > 0.001f ? delta.normalized : Vector3.forward;
+        ReachabilityCheckCount++;
+        long walkStart = Stopwatch.GetTimestamp();
+        bool canWalk;
+        try
+        {
+            canWalk = source.Kind == SurfaceKind.Standable && target.Kind == SurfaceKind.Standable
+                ? CanWalkStandableRouteEdge(source, candidate)
+                : IsReachableSurfaceCandidateUnprofiled(
+                    SurfaceQuery.Directed(
+                        default,
+                        source.Position + Vector3.up * SurfaceConnectionLift,
+                        direction,
+                        distance,
+                        source.Position.y,
+                        source.Id),
+                    candidate,
+                    requireStandableMoveProbe: true);
+        }
+        finally
+        {
+            AddProfileTicks(ref profileReachabilityTicks, walkStart);
+        }
+
+        if (canWalk)
+        {
+            return RouteEdgeValidationResult.Valid(RouteEdgeKind.StandWalk, distance);
+        }
+
+        GapReachabilityCheckCount++;
+        long gapStart = Stopwatch.GetTimestamp();
+        bool canJump;
+        try
+        {
+            canJump = IsReachableGapLandingCandidate(source, candidate);
+        }
+        finally
+        {
+            AddProfileTicks(ref profileGapReachabilityTicks, gapStart);
+        }
+
+        return canJump
+            ? RouteEdgeValidationResult.Valid(RouteEdgeKind.StandJump, distance)
+            : RouteEdgeValidationResult.Invalid("walk-and-jump-rejected", distance);
+    }
+
+    private bool CanWalkStandableRouteEdge(SurfacePoint source, HitCandidate candidate)
+    {
+        if (source.Kind != SurfaceKind.Standable || candidate.Kind != SurfaceKind.Standable)
+        {
+            return false;
+        }
+
+        if (!HasClearAirPathBetween(source, candidate))
+        {
+            ContinuityRejectedCount++;
+            return false;
+        }
+
+        SupportCheckCount++;
+        long supportStart = Stopwatch.GetTimestamp();
+        bool hasSupport = HasSurfaceSupportBetween(source, candidate);
+        AddProfileTicks(ref profileSupportTicks, supportStart);
+        if (!hasSupport)
+        {
+            ContinuityRejectedCount++;
+            return false;
+        }
+
+        if (!CanAcceptStandableMoveAfterSupport(source, candidate))
+        {
+            ContinuityRejectedCount++;
+            ProbeMoveRejectedCount++;
+            return false;
+        }
+
+        Vector3 sourceNormal = source.Normal.sqrMagnitude > 0.001f ? source.Normal.normalized : Vector3.up;
+        Vector3 candidateNormal = candidate.Normal.sqrMagnitude > 0.001f ? candidate.Normal.normalized : Vector3.up;
+        Vector3 from = source.Position + sourceNormal * SurfaceConnectionLift;
+        Vector3 to = candidate.Position + candidateNormal * SurfaceConnectionLift;
+        Vector3 direction = to - from;
+        float castDistance = direction.magnitude;
+        if (castDistance <= 0.001f)
+        {
+            return true;
+        }
+
+        if (!HasSurfaceMeshClearSegment(from, to, source.ColliderId, candidate.ColliderId))
+        {
+            ContinuityRejectedCount++;
+            return false;
+        }
+
+        direction /= castDistance;
+        ConnectionCastCheckCount++;
+        long connectionStart = Stopwatch.GetTimestamp();
+        int hitCount = Physics.SphereCastNonAlloc(
+            from,
+            SurfaceConnectionCastRadius,
+            direction,
+            ClearanceHitBuffer,
+            castDistance,
+            surfaceBlockerMask,
+            QueryTriggerInteraction.Ignore);
+        AddProfileTicks(ref profileConnectionCastTicks, connectionStart);
+        for (int index = 0; index < hitCount; index++)
+        {
+            RaycastHit hit = ClearanceHitBuffer[index];
+            Collider collider = hit.collider;
+            if (collider == null || hit.distance <= 0.02f || hit.distance >= castDistance - 0.03f)
+            {
+                continue;
+            }
+
+            int colliderId = collider.GetInstanceID();
+            if (colliderId == source.ColliderId || colliderId == candidate.ColliderId)
+            {
+                continue;
+            }
+
+            ContinuityRejectedCount++;
+            return false;
+        }
+
+        return true;
+    }
+
     internal void Dispose()
     {
         surfaceAirFieldsByWindow.Clear();
@@ -2319,7 +2551,7 @@ internal sealed class SurfaceSampler
             return existingId;
         }
 
-        if (points.Count >= config.MaxSurfacePointsPerAttempt)
+        if (!forceKeep && points.Count >= config.MaxSurfacePointsPerAttempt)
         {
             HitPointLimit = true;
             return -1;
@@ -2328,7 +2560,8 @@ internal sealed class SurfaceSampler
         int id = points.Count;
         pointIdsByKey[key] = id;
         points.Add(new SurfacePoint(id, position, normal.normalized, colliderId, kind));
-        if (enforceWindowPointLimit
+        if (!forceKeep
+            && enforceWindowPointLimit
             && points.Count - CachedPointCountAtAttemptStart >= config.MaxSurfacePointsPerWindow)
         {
             HitWindowPointLimit = true;
@@ -2790,12 +3023,14 @@ internal sealed class SurfaceSampler
         if (!IsInsideActiveSampleWindow(target))
         {
             SurfaceAirBoundaryProbeSkippedWindowCount++;
+            IncrementAirBoundaryWindowSkippedDirection(probe.Direction);
             return;
         }
 
         QueryKey queryKey = ToAirBoundaryProbeKey(probe.Origin, probe.Direction);
         if (processedRayKeys.Contains(queryKey) || !pendingRayKeys.Add(queryKey))
         {
+            SurfaceAirBoundaryProbeSkippedDuplicateCount++;
             return;
         }
 
@@ -2807,6 +3042,12 @@ internal sealed class SurfaceSampler
             probe.Origin.y));
         activeWindowAirBoundaryProbeCount++;
         SurfaceAirBoundaryProbeQueuedCount++;
+        IncrementAirBoundaryQueuedDirection(probe.Direction);
+        if (debugAirBoundaryProbes.Count < MaxDebugAirBoundaryProbes)
+        {
+            debugAirBoundaryProbes.Add(new DebugAirBoundaryProbe(probe.Origin, probe.Direction, probe.Distance));
+        }
+
         QueuedProbeCount++;
     }
 
@@ -2838,6 +3079,87 @@ internal sealed class SurfaceSampler
             - downProbeReward
             - forwardReward
             + Mathf.Max(0f, -forward) * 0.5f;
+    }
+
+    private void IncrementAirBoundaryQueuedDirection(Vector3 direction)
+    {
+        switch (GetAirBoundaryDirectionKind(direction))
+        {
+            case AirBoundaryDirectionKind.Down:
+                SurfaceAirBoundaryProbeQueuedDownCount++;
+                break;
+            case AirBoundaryDirectionKind.Up:
+                SurfaceAirBoundaryProbeQueuedUpCount++;
+                break;
+            default:
+                SurfaceAirBoundaryProbeQueuedSideCount++;
+                break;
+        }
+    }
+
+    private void IncrementAirBoundaryWindowSkippedDirection(Vector3 direction)
+    {
+        switch (GetAirBoundaryDirectionKind(direction))
+        {
+            case AirBoundaryDirectionKind.Down:
+                SurfaceAirBoundaryProbeWindowSkippedDownCount++;
+                break;
+            case AirBoundaryDirectionKind.Up:
+                SurfaceAirBoundaryProbeWindowSkippedUpCount++;
+                break;
+            default:
+                SurfaceAirBoundaryProbeWindowSkippedSideCount++;
+                break;
+        }
+    }
+
+    private void IncrementAirBoundaryPointDirection(Vector3 direction)
+    {
+        switch (GetAirBoundaryDirectionKind(direction))
+        {
+            case AirBoundaryDirectionKind.Down:
+                SurfaceAirBoundaryPointDownCount++;
+                break;
+            case AirBoundaryDirectionKind.Up:
+                SurfaceAirBoundaryPointUpCount++;
+                break;
+            default:
+                SurfaceAirBoundaryPointSideCount++;
+                break;
+        }
+    }
+
+    private void IncrementAirBoundaryStandableDirection(Vector3 direction)
+    {
+        switch (GetAirBoundaryDirectionKind(direction))
+        {
+            case AirBoundaryDirectionKind.Down:
+                SurfaceAirBoundaryStandableDownCount++;
+                break;
+            case AirBoundaryDirectionKind.Up:
+                SurfaceAirBoundaryStandableUpCount++;
+                break;
+            default:
+                SurfaceAirBoundaryStandableSideCount++;
+                break;
+        }
+    }
+
+    private static AirBoundaryDirectionKind GetAirBoundaryDirectionKind(Vector3 direction)
+    {
+        if (IsDownwardProbeDirection(direction))
+        {
+            return AirBoundaryDirectionKind.Down;
+        }
+
+        return direction.y > 0.5f
+            ? AirBoundaryDirectionKind.Up
+            : AirBoundaryDirectionKind.Side;
+    }
+
+    private static bool IsDownwardProbeDirection(Vector3 direction)
+    {
+        return direction.y < -0.5f;
     }
 
     private int GetMaxGapProbesPerActiveWindow()
@@ -4039,6 +4361,13 @@ internal sealed class SurfaceSampler
     {
         Start,
         Target,
+    }
+
+    private enum AirBoundaryDirectionKind
+    {
+        Down,
+        Up,
+        Side,
     }
 
     private enum QueryKind
