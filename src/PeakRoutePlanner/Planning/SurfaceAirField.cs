@@ -914,6 +914,11 @@ internal sealed class SurfaceAirField
                     }
                 }
 
+                if (!overflowed)
+                {
+                    QueueTerminalBoundaryProbes(current, currentCenter);
+                }
+
                 processed++;
                 if (processed >= maxCells || stopwatch.Elapsed.TotalMilliseconds >= maxMilliseconds)
                 {
@@ -988,6 +993,11 @@ internal sealed class SurfaceAirField
                     }
                 }
 
+                if (!overflowed)
+                {
+                    QueueTerminalBoundaryProbes(current, currentCenter);
+                }
+
                 if (overflowed)
                 {
                     break;
@@ -1010,6 +1020,7 @@ internal sealed class SurfaceAirField
                 || neighbor.Y >= sizeY
                 || neighbor.Z >= sizeZ)
             {
+                QueueBoundaryProbe(cell, origin, new Vector3(offset.x, offset.y, offset.z));
                 return;
             }
 
@@ -1052,6 +1063,10 @@ internal sealed class SurfaceAirField
                 {
                     sliceFrontierCells.Add(cell);
                 }
+                else
+                {
+                    QueueBoundaryProbe(cell, origin, new Vector3(offset.x, offset.y, offset.z));
+                }
 
                 return;
             }
@@ -1081,6 +1096,52 @@ internal sealed class SurfaceAirField
             }
 
             QueueBoundaryProbe(cell, origin, new Vector3(offset.x, offset.y, offset.z));
+        }
+
+        private void QueueTerminalBoundaryProbes(AirCellKey cell, Vector3 origin)
+        {
+            int reachableNeighborCount = 0;
+            for (int index = 0; index < NeighborOffsets.Length; index++)
+            {
+                Vector3Int offset = NeighborOffsets[index];
+                AirCellKey neighbor = new(cell.X + offset.x, cell.Y + offset.y, cell.Z + offset.z);
+                if (neighbor.X < 0
+                    || neighbor.Y < 0
+                    || neighbor.Z < 0
+                    || neighbor.X >= sizeX
+                    || neighbor.Y >= sizeY
+                    || neighbor.Z >= sizeZ)
+                {
+                    continue;
+                }
+
+                if (reachableCells.Contains(neighbor))
+                {
+                    reachableNeighborCount++;
+                    if (reachableNeighborCount > 1)
+                    {
+                        return;
+                    }
+                }
+            }
+
+            for (int index = 0; index < NeighborOffsets.Length; index++)
+            {
+                Vector3Int offset = NeighborOffsets[index];
+                AirCellKey neighbor = new(cell.X + offset.x, cell.Y + offset.y, cell.Z + offset.z);
+                if (neighbor.X >= 0
+                    && neighbor.Y >= 0
+                    && neighbor.Z >= 0
+                    && neighbor.X < sizeX
+                    && neighbor.Y < sizeY
+                    && neighbor.Z < sizeZ
+                    && reachableCells.Contains(neighbor))
+                {
+                    continue;
+                }
+
+                QueueBoundaryProbe(cell, origin, new Vector3(offset.x, offset.y, offset.z));
+            }
         }
 
         private void QueueBoundaryProbe(AirCellKey cell, Vector3 origin, Vector3 direction)
@@ -1161,6 +1222,16 @@ internal sealed class SurfaceAirField
                     || neighbor.Y >= sizeY
                     || neighbor.Z >= sizeZ)
                 {
+                    if (QueueBoundaryProbe(
+                            boundaryProbes,
+                            queuedBoundaries,
+                            origin,
+                            new Vector3(offset.x, offset.y, offset.z),
+                            cellSize))
+                    {
+                        isBoundaryCell = true;
+                    }
+
                     continue;
                 }
 

@@ -545,9 +545,12 @@ internal sealed class SurfaceSampler
             TargetIndex = -1;
         }
 
-        for (int index = 0; index < routeExpandedWindowCentersBySide.Length; index++)
+        if (!preserveSampleCache)
         {
-            routeExpandedWindowCentersBySide[index].Clear();
+            for (int index = 0; index < routeExpandedWindowCentersBySide.Length; index++)
+            {
+                routeExpandedWindowCentersBySide[index].Clear();
+            }
         }
 
         frontierSeeds.Clear();
@@ -1976,7 +1979,19 @@ internal sealed class SurfaceSampler
         {
             return Mathf.Max(
                 defaultLimit,
-                StandWallProbeReach + StandWallProbeHeightOffsets[StandWallProbeHeightOffsets.Length - 1] + 0.25f);
+                config.SurfaceNeighborDistance * 4f,
+                StandWallProbeReach + StandWallProbeHeightOffsets[StandWallProbeHeightOffsets.Length - 1] + 0.35f);
+        }
+
+        if (query.Kind == QueryKind.Directed
+            && source.Kind == SurfaceKind.Climbable
+            && candidate.Kind == SurfaceKind.Standable)
+        {
+            return Mathf.Max(
+                defaultLimit,
+                config.SurfaceNeighborDistance * 4f,
+                config.MaxAirTransferDistance + 0.75f,
+                config.MaxWalkStepUpHeight + config.MaxWalkDropHeight + 1f);
         }
 
         if ((query.Kind == QueryKind.Directed || query.Kind == QueryKind.AirTransfer)
@@ -2144,7 +2159,8 @@ internal sealed class SurfaceSampler
 
     private bool HasSurfaceSupportBetween(SurfacePoint source, HitCandidate candidate)
     {
-        if (source.Kind == SurfaceKind.Standable && candidate.Kind == SurfaceKind.Climbable)
+        if ((source.Kind == SurfaceKind.Standable && candidate.Kind == SurfaceKind.Climbable)
+            || (source.Kind == SurfaceKind.Climbable && candidate.Kind == SurfaceKind.Standable))
         {
             return true;
         }
@@ -2398,7 +2414,7 @@ internal sealed class SurfaceSampler
 
         if (canWalk)
         {
-            return RouteEdgeValidationResult.Valid(RouteEdgeKind.StandWalk, distance);
+            return RouteEdgeValidationResult.Valid(RouteEdgeKind.StandWalk, distance, staminaCost: 0f);
         }
 
         GapReachabilityCheckCount++;
@@ -2414,8 +2430,97 @@ internal sealed class SurfaceSampler
         }
 
         return canJump
-            ? RouteEdgeValidationResult.Valid(RouteEdgeKind.StandJump, distance)
+            ? RouteEdgeValidationResult.Valid(RouteEdgeKind.StandJump, distance, EstimateStandJumpStaminaCost(source, target))
             : RouteEdgeValidationResult.Invalid("walk-and-jump-rejected", distance);
+    }
+
+    internal RouteEdgeValidationResult ValidateSurfaceEdge(SurfacePoint source, SurfacePoint target)
+    {
+        float distance = Vector3.Distance(source.Position, target.Position);
+        if (source.Id == target.Id || distance <= 0.05f)
+        {
+            return RouteEdgeValidationResult.Valid(RouteEdgeKind.SameRegion, distance);
+        }
+
+        if ((source.Kind != SurfaceKind.Standable && source.Kind != SurfaceKind.Climbable)
+            || (target.Kind != SurfaceKind.Standable && target.Kind != SurfaceKind.Climbable))
+        {
+            return RouteEdgeValidationResult.Invalid("unsupported-surface-kind", distance);
+        }
+
+        if (source.Kind == SurfaceKind.Standable && target.Kind == SurfaceKind.Standable)
+        {
+            return ValidateStandableEdge(source, target);
+        }
+
+        if (config == null)
+        {
+            return RouteEdgeValidationResult.Invalid("sampler-not-initialized", distance);
+        }
+
+        HitCandidate candidate = new(
+            target.Position,
+            target.Normal.sqrMagnitude > 0.001f ? target.Normal.normalized : Vector3.up,
+            target.ColliderId,
+            target.Kind,
+            distance);
+
+        Vector3 delta = target.Position - source.Position;
+        Vector3 direction = delta.sqrMagnitude > 0.001f ? delta.normalized : Vector3.forward;
+        Vector3 sourceNormal = source.Normal.sqrMagnitude > 0.001f ? source.Normal.normalized : Vector3.up;
+        ReachabilityCheckCount++;
+        long surfaceStart = Stopwatch.GetTimestamp();
+        bool reachable;
+        try
+        {
+            reachable = IsReachableSurfaceCandidateUnprofiled(
+                SurfaceQuery.Directed(
+                    default,
+                    source.Position + sourceNormal * SurfaceConnectionLift,
+                    direction,
+                    distance,
+                    source.Position.y,
+                    source.Id),
+                candidate,
+                requireStandableMoveProbe: true);
+        }
+        finally
+        {
+            AddProfileTicks(ref profileReachabilityTicks, surfaceStart);
+        }
+
+        if (!reachable)
+        {
+            return RouteEdgeValidationResult.Invalid("surface-edge-rejected", distance);
+        }
+
+        return RouteEdgeValidationResult.Valid(RouteEdgeKind.SurfaceClimb, distance, EstimateSurfaceEdgeStaminaCost(source, target, direction, distance));
+    }
+
+    private float EstimateStandJumpStaminaCost(SurfacePoint source, SurfacePoint target)
+    {
+        float horizontalDistance = Vector2.Distance(
+            new Vector2(source.Position.x, source.Position.z),
+            new Vector2(target.Position.x, target.Position.z));
+        bool sprintJump = horizontalDistance > config.NormalStandJumpDistance + 0.05f;
+        return staminaModel.GetJumpCost(sprintJump);
+    }
+
+    private float EstimateSurfaceEdgeStaminaCost(SurfacePoint source, SurfacePoint target, Vector3 direction, float distance)
+    {
+        if (source.Kind == SurfaceKind.Climbable && target.Kind == SurfaceKind.Climbable)
+        {
+            Vector3 sourceNormal = source.Normal.sqrMagnitude > 0.001f ? source.Normal.normalized : Vector3.zero;
+            if (sourceNormal.sqrMagnitude > 0.001f
+                && Vector3.Dot(direction.normalized, sourceNormal) >= MinimumAirTransferProbeNormalDot)
+            {
+                return staminaModel.GetClimbJumpCost();
+            }
+        }
+
+        return source.Kind == SurfaceKind.Climbable || target.Kind == SurfaceKind.Climbable
+            ? staminaModel.GetClimbCost(distance)
+            : 0f;
     }
 
     private bool CanWalkStandableRouteEdge(SurfacePoint source, HitCandidate candidate)
@@ -3020,7 +3125,9 @@ internal sealed class SurfaceSampler
         }
 
         Vector3 target = probe.Origin + probe.Direction * probe.Distance;
-        if (!IsInsideActiveSampleWindow(target))
+        bool originInsideWindow = IsInsideActiveSampleWindow(probe.Origin);
+        bool targetInsideWindow = IsInsideActiveSampleWindow(target);
+        if (!originInsideWindow && !targetInsideWindow)
         {
             SurfaceAirBoundaryProbeSkippedWindowCount++;
             IncrementAirBoundaryWindowSkippedDirection(probe.Direction);

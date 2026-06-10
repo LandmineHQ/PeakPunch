@@ -38,16 +38,20 @@ internal enum RouteEdgeKind
     SameRegion,
     StandWalk,
     StandJump,
+    SurfaceClimb,
+    ClimbAssisted,
+    GraphLookahead,
 }
 
 internal readonly struct RouteEdgeValidationResult
 {
-    internal RouteEdgeValidationResult(bool isValid, RouteEdgeKind kind, string reason, float distance)
+    internal RouteEdgeValidationResult(bool isValid, RouteEdgeKind kind, string reason, float distance, float staminaCost)
     {
         IsValid = isValid;
         Kind = kind;
         Reason = reason;
         Distance = distance;
+        StaminaCost = staminaCost;
     }
 
     internal bool IsValid { get; }
@@ -58,14 +62,16 @@ internal readonly struct RouteEdgeValidationResult
 
     internal float Distance { get; }
 
-    internal static RouteEdgeValidationResult Valid(RouteEdgeKind kind, float distance)
+    internal float StaminaCost { get; }
+
+    internal static RouteEdgeValidationResult Valid(RouteEdgeKind kind, float distance, float staminaCost = 0f)
     {
-        return new RouteEdgeValidationResult(true, kind, string.Empty, distance);
+        return new RouteEdgeValidationResult(true, kind, string.Empty, distance, staminaCost);
     }
 
-    internal static RouteEdgeValidationResult Invalid(string reason, float distance = 0f)
+    internal static RouteEdgeValidationResult Invalid(string reason, float distance = 0f, float staminaCost = 0f)
     {
-        return new RouteEdgeValidationResult(false, RouteEdgeKind.None, reason, distance);
+        return new RouteEdgeValidationResult(false, RouteEdgeKind.None, reason, distance, staminaCost);
     }
 }
 

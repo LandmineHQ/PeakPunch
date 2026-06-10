@@ -24,6 +24,10 @@ internal sealed class RoutePlannerRuntime
     private string activeSamplingLabel = string.Empty;
     private SamplingMode activeSamplingMode = SamplingMode.None;
     private RouteSearchRun? activeRouteSearch;
+    private readonly List<Vector3> lastRoutePreviewPoints = [];
+    private SurfaceDebugRenderOptions lastRenderOptions;
+    private SamplingMode lastRenderedSamplingMode = SamplingMode.None;
+    private bool hasLastRenderOptions;
 
     internal RoutePlannerRuntime(SamplingWindowRenderer windowRenderer)
     {
@@ -63,6 +67,8 @@ internal sealed class RoutePlannerRuntime
         {
             UpdateSampling();
         }
+
+        RefreshRenderedDebugVisibilityIfNeeded();
     }
 
     internal void Cleanup()
@@ -112,13 +118,15 @@ internal sealed class RoutePlannerRuntime
 
         config = PlannerDefaults.ToPlannerConfig(localCharacter);
         VerticalAirColumnDebugResult result = sampler.BuildVerticalAirColumnDebug(playerPosition, config);
+        SurfaceDebugRenderOptions debugOptions = SurfaceDebugRenderOptions.ForceDebug;
         sampleRenderer.Render(
             sampler.Points,
             sampler.DebugAirCellCenters,
-            PeakRoutePlannerConfig.RenderDebugAirBoundaryProbes.Value ? sampler.DebugAirBoundaryProbes : []);
-        hasRenderedSamples = sampler.Points.Count > 0
-            || sampler.DebugAirCellCenters.Count > 0
-            || (PeakRoutePlannerConfig.RenderDebugAirBoundaryProbes.Value && sampler.DebugAirBoundaryProbes.Count > 0);
+            sampler.DebugAirBoundaryProbes,
+            routePreviewPoints: null,
+            options: debugOptions);
+        RememberRenderedState(SamplingMode.Debug, debugOptions);
+        hasRenderedSamples = sampleRenderer.HasMarkers;
 
         Plugin.Log.LogInfo(
             $"Vertical air-column debug complete: seed=({result.SeedPosition.x:0.00},{result.SeedPosition.y:0.00},{result.SeedPosition.z:0.00}), probeOrigin=({result.ProbeOrigin.x:0.00},{result.ProbeOrigin.y:0.00},{result.ProbeOrigin.z:0.00}), blockedCell=({result.BlockedCellCenter.x:0.00},{result.BlockedCellCenter.y:0.00},{result.BlockedCellCenter.z:0.00}), airCells={result.AirCellCount}, checkedCells={result.CheckedCellCount}, rawHits={result.RawHitCount}, hasBoundary={result.HasBoundary}, hasSurfacePoint={result.HasSurfacePoint}, surfaceKind={result.SurfaceKind}, reason={result.Reason}, elapsedMs={result.ElapsedMilliseconds:0.00}.");
@@ -239,7 +247,7 @@ internal sealed class RoutePlannerRuntime
     {
         bool complete = sampler.ProcessFrame();
         AccumulateSamplingTime();
-        RenderSamplingWindowPreview(force: true);
+        RenderSamplingWindowPreview(force: false);
 
         if (!complete)
         {
@@ -255,13 +263,15 @@ internal sealed class RoutePlannerRuntime
             return;
         }
 
+        SurfaceDebugRenderOptions debugOptions = SurfaceDebugRenderOptions.ForceDebug;
         sampleRenderer.Render(
             sampler.Points,
-            PeakRoutePlannerConfig.RenderDebugAirCells.Value ? sampler.DebugAirCellCenters : [],
-            PeakRoutePlannerConfig.RenderDebugAirBoundaryProbes.Value ? sampler.DebugAirBoundaryProbes : []);
-        hasRenderedSamples = sampler.Points.Count > 0
-            || (PeakRoutePlannerConfig.RenderDebugAirCells.Value && sampler.DebugAirCellCenters.Count > 0)
-            || (PeakRoutePlannerConfig.RenderDebugAirBoundaryProbes.Value && sampler.DebugAirBoundaryProbes.Count > 0);
+            sampler.DebugAirCellCenters,
+            sampler.DebugAirBoundaryProbes,
+            routePreviewPoints: null,
+            options: debugOptions);
+        RememberRenderedState(SamplingMode.Debug, debugOptions);
+        hasRenderedSamples = sampleRenderer.HasMarkers;
 
         LogSamplingCompletion(cpuMilliseconds);
         Plugin.Log.LogInfo(
@@ -272,18 +282,17 @@ internal sealed class RoutePlannerRuntime
     {
         RouteSearchRun routeSearch = activeRouteSearch!;
         RouteSearchDecision decision = routeSearch.AdvanceAfterSampling(sampler.Points, sampler.StartIndex, sampler);
-        IReadOnlyList<Vector3> routePreview = PeakRoutePlannerConfig.RenderRoutePreview.Value
-            ? routeSearch.PreviewPath
-            : [];
+        lastRoutePreviewPoints.Clear();
+        lastRoutePreviewPoints.AddRange(routeSearch.PreviewPath);
+        SurfaceDebugRenderOptions routeOptions = GetRouteRenderOptions();
         sampleRenderer.Render(
             sampler.Points,
-            PeakRoutePlannerConfig.RenderDebugAirCells.Value ? sampler.DebugAirCellCenters : [],
-            PeakRoutePlannerConfig.RenderDebugAirBoundaryProbes.Value ? sampler.DebugAirBoundaryProbes : [],
-            routePreview);
-        hasRenderedSamples = sampler.Points.Count > 0
-            || routePreview.Count > 0
-            || (PeakRoutePlannerConfig.RenderDebugAirCells.Value && sampler.DebugAirCellCenters.Count > 0)
-            || (PeakRoutePlannerConfig.RenderDebugAirBoundaryProbes.Value && sampler.DebugAirBoundaryProbes.Count > 0);
+            sampler.DebugAirCellCenters,
+            sampler.DebugAirBoundaryProbes,
+            lastRoutePreviewPoints,
+            routeOptions);
+        RememberRenderedState(SamplingMode.Route, routeOptions);
+        hasRenderedSamples = sampleRenderer.HasMarkers;
 
         LogSamplingCompletion(cpuMilliseconds);
         Plugin.Log.LogInfo(
@@ -297,6 +306,56 @@ internal sealed class RoutePlannerRuntime
 
         activeRouteSearch = null;
         activeSamplingMode = SamplingMode.None;
+    }
+
+
+    private SurfaceDebugRenderOptions GetRouteRenderOptions()
+    {
+        return new SurfaceDebugRenderOptions(
+            PeakRoutePlannerConfig.RenderSurfaceSampleMarkers.Value,
+            PeakRoutePlannerConfig.RenderAirCells.Value,
+            PeakRoutePlannerConfig.RenderAirBoundaryProbes.Value,
+            PeakRoutePlannerConfig.RenderRoutePreview.Value);
+    }
+
+    private void RememberRenderedState(SamplingMode mode, SurfaceDebugRenderOptions options)
+    {
+        lastRenderedSamplingMode = mode;
+        lastRenderOptions = options;
+        hasLastRenderOptions = true;
+    }
+
+    private void RefreshRenderedDebugVisibilityIfNeeded()
+    {
+        SamplingMode mode = activeSamplingMode != SamplingMode.None
+            ? activeSamplingMode
+            : lastRenderedSamplingMode;
+        if (mode == SamplingMode.None || !hasLastRenderOptions)
+        {
+            return;
+        }
+
+        SurfaceDebugRenderOptions currentOptions = mode == SamplingMode.Route
+            ? GetRouteRenderOptions()
+            : SurfaceDebugRenderOptions.ForceDebug;
+        if (currentOptions == lastRenderOptions)
+        {
+            return;
+        }
+
+        IReadOnlyList<Vector3>? routePreview = mode == SamplingMode.Route
+            ? lastRoutePreviewPoints
+            : null;
+        sampleRenderer.Render(
+            sampler.Points,
+            sampler.DebugAirCellCenters,
+            sampler.DebugAirBoundaryProbes,
+            routePreview,
+            currentOptions);
+        RememberRenderedState(mode, currentOptions);
+        hasRenderedSamples = sampleRenderer.HasMarkers;
+        Plugin.Log.LogInfo(
+            $"Applied PeakRoutePlanner render hot reload: mode={mode}, showSamples={currentOptions.ShowSurfaceSamples}, showAirCells={currentOptions.ShowAirCells}, showProbes={currentOptions.ShowAirBoundaryProbes}, showRoutePreview={currentOptions.ShowRoutePreview}.");
     }
 
     private void LogSamplingCompletion(double cpuMilliseconds)
@@ -314,6 +373,9 @@ internal sealed class RoutePlannerRuntime
         activeSamplingLabel = string.Empty;
         activeSamplingMode = SamplingMode.None;
         activeRouteSearch = null;
+        lastRoutePreviewPoints.Clear();
+        lastRenderedSamplingMode = SamplingMode.None;
+        hasLastRenderOptions = false;
         sampleRenderer.Clear();
         windowRenderer.Clear();
         samplingStopwatch.Reset();

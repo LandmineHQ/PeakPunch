@@ -41,7 +41,12 @@ internal readonly struct VanillaStaminaModel
 
     internal bool CanAffordClimbJump()
     {
-        return CanAfford(ApplyAscentsMultiplier(config.ClimbJumpStaminaCost));
+        return CanAfford(GetClimbJumpCost());
+    }
+
+    internal float GetClimbJumpCost()
+    {
+        return ApplyAscentsMultiplier(config.ClimbJumpStaminaCost);
     }
 
     internal float GetSprintCost(float seconds)
