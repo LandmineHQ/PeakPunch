@@ -84,7 +84,7 @@
 - `PeakRoutePlanner` must keep Unity Physics queries on the Unity main thread. Background work may only process pure data snapshots such as sampled `SurfacePoint` values.
 - `PeakRoutePlanner` active shortcuts are: `LeftAlt+Comma` for incremental route planning/preview, `LeftAlt+Period` to clear/cancel current sampling state, and `LeftAlt+Slash` for one manual surface-sampling visualization from `Character.localCharacter`. Debug views force standable markers, climbable markers, air cells, and probe lines visible. Route mode honors `[Route Planner Rendering]` config: `RenderSurfaceSampleMarkers`, `RenderAirCells`, and `RenderAirBoundaryProbes` default false; `RenderRoutePreview` defaults true.
 - `PeakRoutePlanner` should keep local player position lookup and campfire target lookup as standalone runtime helpers so future route planners can reuse them directly. The campfire target getter should prefer the highest `Campfire.Center()` and only fall back to configured/name-based object lookup when no `Campfire` exists.
-- `PeakRoutePlanner` sampling uses a 30x40x30 ellipsoid-style diagnostic window, split into forward slices. The visible sampling window is a reusable translucent ellipsoid created during sampling and cleared when sampling is canceled or completed.
+- `PeakRoutePlanner` sampling uses a 60x40x60 ellipsoid-style diagnostic window, split into forward slices. The visible sampling window is a reusable translucent ellipsoid created during sampling and cleared when sampling is canceled or completed.
 - `PeakRoutePlanner` surface sampling is driven by reachable air-boundary probes plus sparse neighbor probes. Air flood fill starts from the seed-accessible air pocket, keeps reachable air cells and boundary probes, and should not probe from non-boundary air cells. Accepted samples should stay complete for debug; do not suppress flat standable samples inside `SurfaceSampler`.
 - `PeakRoutePlanner` must treat ordinary exterior sampling like a depth-buffer/z-buffer query, while local windows inside caves or under overhangs should prefer the valid hit on the seed-reachable air/surface layer instead of blindly accepting stacked lower or internal surfaces. Standing capsule clearance remains a secondary validation for accepted standable hits.
 - `PeakRoutePlanner` surface sampling should use a window-level broadphase where possible: collect nearby terrain colliders with `OverlapBoxNonAlloc`, resolve directed probes with per-collider `Collider.Raycast`, and fall back to global casts only when the window collider set is unavailable or too large. Keep broadphase, air-field, raycast, and filter timing logs useful for profiling.
@@ -104,3 +104,11 @@
 
 - Update this file in the same change whenever project structure, build commands, runtime dependencies, localization rules, debug tooling, or PEAK reverse-engineering workflow changes.
 - Treat stale guidance here as a bug in the change. If code or scripts diverge from this file, update `AGENTS.md` automatically as part of the implementation before finalizing.
+
+
+### 2026-06-11 route planner wide target/probe update
+
+- Route/debug sampling now uses a wider horizontal local window by default: horizontal radius 30m, vertical half extent remains 20m, so the preview window is 60x40x60 instead of 30x40x30.
+- Route planner steps preserve cached samples but do not requeue old cached frontier seeds; this prevents old side/frontier windows from pulling a forward route step sideways.
+- Target-forward standable candidates are evaluated before rubble graph lookahead. They must improve distance to the campfire, and climb-assisted validation is tried on more of these forward candidates.
+- Air boundary probes are no longer emitted just because a reachable air cell touches the grid or ellipsoid boundary. Probes are emitted only for real blocked neighbor cells or blocked transitions inside the sampled air field.

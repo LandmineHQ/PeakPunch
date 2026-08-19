@@ -22,7 +22,7 @@ internal static class PlannerDefaults
         {
             CorridorRadiusStep = 4f,
             HorizontalSampleSpacing = 0.5f,
-            SurfaceSamplingWindowRadius = 15f,
+            SurfaceSamplingWindowRadius = 30f,
             MaxSamplingWindowsPerSide = 1,
             AdaptiveGuideMinimumStep = 0.5f,
             MinimumPartialSegmentDistance = 1.0f,

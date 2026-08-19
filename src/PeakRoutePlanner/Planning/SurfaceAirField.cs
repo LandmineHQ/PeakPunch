@@ -1020,7 +1020,8 @@ internal sealed class SurfaceAirField
                 || neighbor.Y >= sizeY
                 || neighbor.Z >= sizeZ)
             {
-                QueueBoundaryProbe(cell, origin, new Vector3(offset.x, offset.y, offset.z));
+                // Grid edges are synthetic sample-window boundaries. Do not fire air probes there;
+                // only real blocked cells or blocked transitions should generate boundary probes.
                 return;
             }
 
@@ -1062,10 +1063,6 @@ internal sealed class SurfaceAirField
                         scanVerticalHalfExtent))
                 {
                     sliceFrontierCells.Add(cell);
-                }
-                else
-                {
-                    QueueBoundaryProbe(cell, origin, new Vector3(offset.x, offset.y, offset.z));
                 }
 
                 return;
@@ -1129,18 +1126,34 @@ internal sealed class SurfaceAirField
             {
                 Vector3Int offset = NeighborOffsets[index];
                 AirCellKey neighbor = new(cell.X + offset.x, cell.Y + offset.y, cell.Z + offset.z);
-                if (neighbor.X >= 0
-                    && neighbor.Y >= 0
-                    && neighbor.Z >= 0
-                    && neighbor.X < sizeX
-                    && neighbor.Y < sizeY
-                    && neighbor.Z < sizeZ
-                    && reachableCells.Contains(neighbor))
+                if (neighbor.X < 0
+                    || neighbor.Y < 0
+                    || neighbor.Z < 0
+                    || neighbor.X >= sizeX
+                    || neighbor.Y >= sizeY
+                    || neighbor.Z >= sizeZ)
                 {
                     continue;
                 }
 
-                QueueBoundaryProbe(cell, origin, new Vector3(offset.x, offset.y, offset.z));
+                if (reachableCells.Contains(neighbor))
+                {
+                    continue;
+                }
+
+                Vector3 neighborCenter = GetCellCenter(neighbor, min, cellSize);
+                if (!IsInsideScanEllipsoid(
+                        neighborCenter,
+                        scanOrigin,
+                        scanDirection,
+                        currentScanForwardHalfExtent,
+                        scanLateralHalfExtent,
+                        scanVerticalHalfExtent))
+                {
+                    continue;
+                }
+
+                TryQueueBoundaryProbe(cell, origin, offset, neighbor);
             }
         }
 
@@ -1222,16 +1235,6 @@ internal sealed class SurfaceAirField
                     || neighbor.Y >= sizeY
                     || neighbor.Z >= sizeZ)
                 {
-                    if (QueueBoundaryProbe(
-                            boundaryProbes,
-                            queuedBoundaries,
-                            origin,
-                            new Vector3(offset.x, offset.y, offset.z),
-                            cellSize))
-                    {
-                        isBoundaryCell = true;
-                    }
-
                     continue;
                 }
 

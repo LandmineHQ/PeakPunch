@@ -49,18 +49,18 @@ internal sealed class SurfaceSampler
     private const float ClimbProbeThrottleCellSize = 0.75f;
     private const float SurfaceAirFieldCellSize = 1f;
     private const float SurfaceAirProbeRadius = 0.42f;
-    private const float SamplingWindowVerticalHalfExtentMultiplier = 4f / 3f;
+    private const float SamplingWindowVerticalHalfExtent = 20f;
     private const float SamplingSliceForwardHalfExtentMultiplier = 1.5f;
     private const float SurfaceMeshFieldCellSize = 0.75f;
     private const int MaxGapProbesPerWindow = 96;
     private const int MaxFocusedStandableNeighborDirections = 6;
     private const int MaxFocusedStandableWallProbeDirections = 4;
-    private const int MaxSurfaceAirReachableCells = 24000;
+    private const int MaxSurfaceAirReachableCells = 48000;
     private const int MaxSurfaceAirBoundaryProbesPerWindow = 4096;
     private const int MaxGuidedSurfaceAirBoundaryProbesPerWindow = 768;
     private const int MaxGuidedGapProbesPerWindow = 24;
     private const int MaxGuidedDropDiscoveryProbesPerWindow = 24;
-    private const int MaxDebugAirCellCenters = 24000;
+    private const int MaxDebugAirCellCenters = 48000;
     private const int MaxDebugAirBoundaryProbes = 12000;
     private const int MaxSurfaceAirBuildCellsPerFrame = 256;
     private const int MaxVerticalAirColumnCells = 96;
@@ -515,7 +515,8 @@ internal sealed class SurfaceSampler
         bool constrainToGuide = true,
         bool enforcePointLimitPerWindow = true,
         bool sampleFullWindowBySlices = false,
-        bool prioritizeGuidedSampling = false)
+        bool prioritizeGuidedSampling = false,
+        bool requeueCachedFrontierSeeds = true)
     {
         config = plannerConfig;
         staminaModel = new VanillaStaminaModel(config);
@@ -714,7 +715,7 @@ internal sealed class SurfaceSampler
             EnqueueSeed(TargetIndex, FrontierSide.Target);
         }
 
-        if (preserveSampleCache)
+        if (preserveSampleCache && requeueCachedFrontierSeeds)
         {
             RequeueCachedFrontierSeeds(includeTargetFrontier);
         }
@@ -858,7 +859,7 @@ internal sealed class SurfaceSampler
         samplingWindowRadius = Mathf.Max(
             corridorSpacing,
             Mathf.Round(Mathf.Max(corridorSpacing, config.SurfaceSamplingWindowRadius) / corridorSpacing) * corridorSpacing);
-        samplingWindowVerticalHalfExtent = samplingWindowRadius * SamplingWindowVerticalHalfExtentMultiplier;
+        samplingWindowVerticalHalfExtent = SamplingWindowVerticalHalfExtent;
         samplingWindowVerticalExtent = samplingWindowVerticalHalfExtent * 2f;
         samplingSliceForwardHalfExtent = Mathf.Max(
             corridorSpacing,

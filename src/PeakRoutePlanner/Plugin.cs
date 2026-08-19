@@ -13,7 +13,7 @@ public sealed class Plugin : BaseUnityPlugin
     internal const string PluginId = "com.github.LandmineHQ.PeakRoutePlanner";
     internal const string PluginName = "PeakRoutePlanner";
     internal const string PluginVersion = "0.1.0";
-    internal const string RoutePlannerBuildMarker = "route-planner-rubble-safe-stamina-preview-20260610";
+    internal const string RoutePlannerBuildMarker = "route-planner-wide-target-seed-probe-20260611";
 
     internal static ManualLogSource Log { get; private set; } = null!;
 

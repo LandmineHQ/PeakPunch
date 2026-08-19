@@ -190,7 +190,8 @@ internal sealed class RoutePlannerRuntime
             constrainToGuide: false,
             enforcePointLimitPerWindow: false,
             sampleFullWindowBySlices: true,
-            prioritizeGuidedSampling: prioritizeGuidedSampling);
+            prioritizeGuidedSampling: prioritizeGuidedSampling,
+            requeueCachedFrontierSeeds: true);
 
         windowRenderer.CreateSamplingWindowPreview();
         RenderSamplingWindowPreview(force: true);
@@ -227,14 +228,15 @@ internal sealed class RoutePlannerRuntime
             constrainToGuide: false,
             enforcePointLimitPerWindow: false,
             sampleFullWindowBySlices: true,
-            prioritizeGuidedSampling: false);
+            prioritizeGuidedSampling: false,
+            requeueCachedFrontierSeeds: false);
 
         windowRenderer.CreateSamplingWindowPreview();
         RenderSamplingWindowPreview(force: true);
         RestartSamplingTimer();
 
         Plugin.Log.LogInfo(
-            $"Started {activeSamplingLabel}: seed=({seedPosition.x:0.0},{seedPosition.y:0.0},{seedPosition.z:0.0}), target=({routeSearch.TargetPosition.x:0.0},{routeSearch.TargetPosition.y:0.0},{routeSearch.TargetPosition.z:0.0}), preserveCache={preserveSampleCache}, cachedPoints={sampler.CachedPointCountAtAttemptStart}, radius={config.SurfaceSamplingWindowRadius:0.0}, pendingRays={sampler.PendingRayCount}.");
+            $"Started {activeSamplingLabel}: seed=({seedPosition.x:0.0},{seedPosition.y:0.0},{seedPosition.z:0.0}), target=({routeSearch.TargetPosition.x:0.0},{routeSearch.TargetPosition.y:0.0},{routeSearch.TargetPosition.z:0.0}), preserveCache={preserveSampleCache}, cachedPoints={sampler.CachedPointCountAtAttemptStart}, radius={config.SurfaceSamplingWindowRadius:0.0}, windowSize=({sampler.ActiveSampleWindowSize.x:0.0},{sampler.ActiveSampleWindowSize.y:0.0},{sampler.ActiveSampleWindowSize.z:0.0}), cacheFrontierRequeue=False, pendingRays={sampler.PendingRayCount}.");
     }
 
     private void LogStaminaSnapshot()

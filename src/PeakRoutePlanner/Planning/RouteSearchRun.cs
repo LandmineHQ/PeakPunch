@@ -33,12 +33,13 @@ internal sealed class RouteSearchRun
 {
     private const float SeedQuantizationCellSize = 1.25f;
     private const int MaxCandidateRegionsPerSource = 24;
+    private const int MaxForwardCandidateRegionsPerSource = 96;
     private const int MaxDetourCandidateRegionsPerSource = 96;
-    private const int MaxClimbAssistedCandidateRegionsPerSource = 4;
-    private const int MaxClimbBridgePointCount = 96;
-    private const int MaxClimbBridgeExpansions = 96;
-    private const int MaxClimbNeighborsPerNode = 8;
-    private const int MaxClimbEntryCandidatesPerSource = 16;
+    private const int MaxClimbAssistedCandidateRegionsPerSource = 16;
+    private const int MaxClimbBridgePointCount = 160;
+    private const int MaxClimbBridgeExpansions = 160;
+    private const int MaxClimbNeighborsPerNode = 10;
+    private const int MaxClimbEntryCandidatesPerSource = 20;
     private const int GraphLookaheadMinimumRegionCount = 512;
     private const int MaxGraphLookaheadExpansions = 192;
     private const int MaxGraphLookaheadNeighborRegions = 32;
@@ -48,6 +49,8 @@ internal sealed class RouteSearchRun
     private const float ClimbBridgeCorridorPadding = 4f;
     private const float GraphLookaheadMinimumProgress = 6f;
     private const float GraphLookaheadMinimumSeedDistance = 8f;
+    private const float ForwardCandidateMinimumProgress = 4f;
+    private const float ForwardCandidateVerticalProgressWeight = 0.35f;
     private const float GraphLookaheadMaxHopDistancePadding = 2f;
     private const int MaxSameTargetLookaheadExpansions = 96;
     private const int MaxSameTargetLookaheadNeighborRegions = 24;
@@ -274,6 +277,20 @@ internal sealed class RouteSearchRun
             || IsBlocked(sourceRegion))
         {
             return false;
+        }
+
+        if (TrySelectCandidateRegion(
+                sourceRegion,
+                regionMap,
+                points,
+                sampler,
+                MaxForwardCandidateRegionsPerSource,
+                RouteCandidateMode.TargetForward,
+                allowClimbAssist: true,
+                out transition))
+        {
+            selectedSourceIndex = sourceVisitIndex;
+            return true;
         }
 
         if (TryBuildSameRegionFrontier(sourceRegion, committedVisits[sourceVisitIndex], points, sampler, out transition))
@@ -1066,9 +1083,25 @@ internal sealed class RouteSearchRun
             }
 
             float sourceDistance = Vector3.Distance(sourceRegion.Center, region.Center);
-            float score = mode == RouteCandidateMode.SourceDetour
-                ? GetDetourCandidateScore(sourceRegion, region, sourceDistance)
-                : region.DistanceToTarget + sourceDistance * 0.08f;
+            float progress = sourceRegion.DistanceToTarget - region.DistanceToTarget;
+            if (mode == RouteCandidateMode.TargetForward
+                && progress < Mathf.Max(ForwardCandidateMinimumProgress, config.MinimumFrontierAdvanceDistance * 3f))
+            {
+                continue;
+            }
+
+            float verticalProgress = Mathf.Max(0f, region.Center.y - sourceRegion.Center.y);
+            float score = mode switch
+            {
+                RouteCandidateMode.SourceDetour => GetDetourCandidateScore(sourceRegion, region, sourceDistance),
+                RouteCandidateMode.TargetForward => region.DistanceToTarget
+                    + sourceDistance * 0.04f
+                    - Mathf.Max(0f, progress) * 0.25f
+                    - verticalProgress * ForwardCandidateVerticalProgressWeight,
+                _ => region.DistanceToTarget
+                    + sourceDistance * 0.08f
+                    + Mathf.Max(0f, -progress) * 2.0f,
+            };
             candidateBuffer.Add(new RouteRegionCandidate(region, score));
         }
 
@@ -2171,6 +2204,7 @@ internal sealed class RouteSearchRun
     private enum RouteCandidateMode
     {
         TargetGreedy,
+        TargetForward,
         SourceDetour,
     }
 
@@ -2313,20 +2347,16 @@ internal sealed class RouteSearchRun
         {
             SourcePointId = sourcePointId;
             TargetPointId = targetPointId;
-            PointCount = pointCount;
         }
 
         private int SourcePointId { get; }
 
         private int TargetPointId { get; }
 
-        private int PointCount { get; }
-
         public bool Equals(RouteSurfaceEdgeKey other)
         {
             return SourcePointId == other.SourcePointId
-                && TargetPointId == other.TargetPointId
-                && PointCount == other.PointCount;
+                && TargetPointId == other.TargetPointId;
         }
 
         public override bool Equals(object? obj)
@@ -2340,7 +2370,6 @@ internal sealed class RouteSearchRun
             {
                 int hash = SourcePointId;
                 hash = (hash * 397) ^ TargetPointId;
-                hash = (hash * 397) ^ PointCount;
                 return hash;
             }
         }
