@@ -112,3 +112,7 @@
 - Route planner steps preserve cached samples but do not requeue old cached frontier seeds; this prevents old side/frontier windows from pulling a forward route step sideways.
 - Target-forward standable candidates are evaluated before rubble graph lookahead. They must improve distance to the campfire, and climb-assisted validation is tried on more of these forward candidates.
 - Air boundary probes are no longer emitted just because a reachable air cell touches the grid or ellipsoid boundary. Probes are emitted only for real blocked neighbor cells or blocked transitions inside the sampled air field.
+
+## Repository Map
+
+- Source code structure is documented in `src/REPO_MAP.md`. It covers the four independent mod projects under `src/`, their entry points, patch organization, gameplay/tooling systems, and cross-mod compatibility notes.
