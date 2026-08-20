@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Diagnostics;
 using UnityEngine;
 
@@ -192,9 +192,7 @@ internal sealed class SurfaceAirField
         int collisionMask,
         int maxReachableCells,
         float maxScanForwardHalfExtent = -1f,
-        SharedCache? sharedCache = null,
-        Vector3 targetPosition = default,
-        bool hasTargetPosition = false)
+        SharedCache? sharedCache = null)
     {
         return new Builder(
             boxCenter,
@@ -210,9 +208,7 @@ internal sealed class SurfaceAirField
             collisionMask,
             maxReachableCells,
             maxScanForwardHalfExtent,
-            sharedCache,
-            targetPosition,
-            hasTargetPosition);
+            sharedCache);
     }
 
     internal static Vector3 AlignAirGridMin(Vector3 min, float cellSize)
@@ -445,9 +441,7 @@ internal sealed class SurfaceAirField
         ref int blockedTransitionCount,
         ref int clearCellCacheHitCount,
         ref int clearTransitionCacheHitCount,
-        ref bool overflowed,
-        Vector3 targetPosition = default,
-        bool hasTargetPosition = false)
+        ref bool overflowed)
     {
         if (overflowed
             || key.X < 0
@@ -509,14 +503,7 @@ internal sealed class SurfaceAirField
         }
 
         reachableCells.Add(key);
-        float basePriority = GetVerticalPlanePriority(key, min, cellSize, scanOrigin, scanDirection);
-        if (hasTargetPosition)
-        {
-            Vector3 center2 = GetCellCenter(key, min, cellSize);
-            float distToTarget = Vector3.Distance(center2, targetPosition);
-            basePriority = basePriority * 0.35f + distToTarget * 0.65f;
-        }
-        queue.Enqueue(key, basePriority);
+        queue.Enqueue(key, GetVerticalPlanePriority(key, min, cellSize, scanOrigin, scanDirection));
         return true;
     }
 
@@ -730,8 +717,6 @@ internal sealed class SurfaceAirField
         private readonly float scanLateralHalfExtent;
         private readonly float scanVerticalHalfExtent;
         private readonly SharedCache? sharedCache;
-        private readonly Vector3 targetPosition;
-        private readonly bool hasTargetPosition;
         private float currentScanForwardHalfExtent;
         private int checkedCellCount;
         private int blockedCellCount;
@@ -757,9 +742,7 @@ internal sealed class SurfaceAirField
             int collisionMask,
             int maxReachableCells,
             float requestedMaxScanForwardHalfExtent = -1f,
-            SharedCache? sharedCache = null,
-            Vector3 targetPosition = default,
-            bool hasTargetPosition = false)
+            SharedCache? sharedCache = null)
         {
             cellSize = Mathf.Max(0.5f, requestedCellSize);
             probeRadius = Mathf.Clamp(requestedProbeRadius, 0.08f, cellSize * 0.45f);
@@ -780,8 +763,6 @@ internal sealed class SurfaceAirField
             currentScanForwardHalfExtent = scanForwardStep;
             scanLateralHalfExtent = Mathf.Max(cellSize * 0.5f, requestedScanLateralHalfExtent);
             scanVerticalHalfExtent = Mathf.Max(cellSize * 0.5f, requestedScanVerticalHalfExtent);
-            this.targetPosition = targetPosition;
-            this.hasTargetPosition = hasTargetPosition;
 
             Vector3 safeNormal = seedNormal.sqrMagnitude > 0.001f ? seedNormal.normalized : Vector3.up;
             Vector3[] startPositions =
@@ -824,7 +805,7 @@ internal sealed class SurfaceAirField
                         ref blockedTransitionCount,
                         ref clearCellCacheHitCount,
                         ref clearTransitionCacheHitCount,
-                        ref overflowed, targetPosition, hasTargetPosition))
+                        ref overflowed))
                 {
                     foundStart = true;
                     break;
@@ -921,7 +902,7 @@ internal sealed class SurfaceAirField
                         ref blockedTransitionCount,
                         ref clearCellCacheHitCount,
                         ref clearTransitionCacheHitCount,
-                        ref overflowed, targetPosition, hasTargetPosition);
+                        ref overflowed);
                     if (!enqueued)
                     {
                         TryQueueBoundaryProbe(current, currentCenter, offset, neighbor);
@@ -1000,7 +981,7 @@ internal sealed class SurfaceAirField
                         ref blockedTransitionCount,
                         ref clearCellCacheHitCount,
                         ref clearTransitionCacheHitCount,
-                        ref overflowed, targetPosition, hasTargetPosition);
+                        ref overflowed);
                     if (!enqueued)
                     {
                         TryQueueBoundaryProbe(current, currentCenter, offset, neighbor);
@@ -1578,6 +1559,3 @@ internal sealed class SurfaceAirField
     }
 
 }
-
-
-

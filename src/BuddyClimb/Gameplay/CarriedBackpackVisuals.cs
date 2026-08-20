@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
 
@@ -156,7 +156,7 @@ internal static class CarriedBackpackVisuals
 
     private static bool HasOnBackBackpack(Character character)
     {
-        return character?.player?.backpackSlot is { hasBackpack: true }
+        return character != null && character.player != null && !character.player.backpackSlot.IsEmpty()
             && !IsBackpackSlotSelected(character);
     }
 
@@ -181,3 +181,4 @@ internal static class CarriedBackpackVisuals
         HideRenderersMethod.Invoke(item, null);
     }
 }
+

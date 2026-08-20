@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -1090,7 +1090,19 @@ internal sealed class RouteSearchRun
                 continue;
             }
 
-            float verticalProgress = Mathf.Max(0f, region.Center.y - sourceRegion.Center.y);
+            // 下坡/上坡均按朝目标高度方向奖励，避免超长下坡因无垂直奖励而绕路
+            float rawVertical = region.Center.y - sourceRegion.Center.y;
+            float desiredDir = targetPosition.y - sourceRegion.Center.y;
+            float verticalProgress = 0f;
+            if (Mathf.Abs(desiredDir) > 1.0f)
+            {
+                float sign = Mathf.Sign(desiredDir);
+                verticalProgress = Mathf.Max(0f, rawVertical * sign);
+            }
+            else
+            {
+                verticalProgress = Mathf.Max(0f, rawVertical);
+            }
             float score = mode switch
             {
                 RouteCandidateMode.SourceDetour => GetDetourCandidateScore(sourceRegion, region, sourceDistance),
@@ -2110,12 +2122,28 @@ internal sealed class RouteSearchRun
     {
         if (pointId >= 0 && pointId < points.Count)
         {
-            AppendPreviewPoint(points[pointId].Position);
+            SurfacePoint sp = points[pointId];
+            Vector3 offset = GetAirOffset(sp);
+            AppendPreviewPoint(offset);
         }
+    }
+
+    private static Vector3 GetAirOffset(SurfacePoint point)
+    {
+        Vector3 normal = point.Normal.sqrMagnitude > 0.001f ? point.Normal.normalized : Vector3.up;
+        // 向空气外侧偏移，避免卡进地面/墙内，绿色路线更可见
+        float outward = point.Kind == SurfaceKind.Climbable ? 0.32f : 0.22f;
+        float lift = point.Kind == SurfaceKind.Standable ? 0.14f : 0.08f;
+        return point.Position + normal * outward + Vector3.up * lift;
     }
 
     private void AppendPreviewPoint(Vector3 point)
     {
+        // 起点/种子点等已是空气位置，额外抬升0.12m防止贴地
+        if (previewPath.Count == 0)
+        {
+            point += Vector3.up * 0.12f;
+        }
         if (previewPath.Count > 0 && Vector3.Distance(previewPath[previewPath.Count - 1], point) <= 0.05f)
         {
             return;
@@ -2974,3 +3002,5 @@ internal readonly struct StandableRegionCellKey : IEquatable<StandableRegionCell
         }
     }
 }
+
+

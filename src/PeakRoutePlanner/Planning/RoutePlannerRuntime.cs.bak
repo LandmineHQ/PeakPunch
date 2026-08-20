@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -66,11 +66,6 @@ internal sealed class RoutePlannerRuntime
         if (samplingActive)
         {
             UpdateSampling();
-            // A*一体化：首扫过程中若已有点且为Route模式，尝试early advance以在首窗内即出预览
-            if (samplingActive && activeSamplingMode == SamplingMode.Route && activeRouteSearch != null && sampler.Points.Count >= 24 && sampler.ProcessedRayCount % 32 == 0)
-            {
-                TryEarlyRouteAdvance();
-            }
         }
 
         RefreshRenderedDebugVisibilityIfNeeded();
@@ -316,24 +311,6 @@ internal sealed class RoutePlannerRuntime
     }
 
 
-    private void TryEarlyRouteAdvance()
-    {
-        if (activeRouteSearch == null || sampler.Points.Count < 12) return;
-        // 仅在尚未完成当前窗采样但已有足够Standable点时尝试early决策，避免频繁调用
-        int standable = CountSampleKind(SurfaceKind.Standable);
-        if (standable < 8) return;
-                // 提前预览：采样进行中即刷新黄线，首窗内即可见A*方向
-        lastRoutePreviewPoints.Clear();
-        lastRoutePreviewPoints.AddRange(activeRouteSearch.PreviewPath);
-        SurfaceDebugRenderOptions routeOptions = GetRouteRenderOptions();
-        sampleRenderer.Render(
-            sampler.Points,
-            sampler.DebugAirCellCenters,
-            sampler.DebugAirBoundaryProbes,
-            lastRoutePreviewPoints,
-            routeOptions);
-        RememberRenderedState(SamplingMode.Route, routeOptions);
-    }
     private SurfaceDebugRenderOptions GetRouteRenderOptions()
     {
         return new SurfaceDebugRenderOptions(
@@ -533,5 +510,3 @@ internal sealed class RoutePlannerRuntime
         return character.transform.position;
     }
 }
-
-

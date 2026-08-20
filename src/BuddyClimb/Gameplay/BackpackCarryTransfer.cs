@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using BuddyClimb.Configuration;
 using Photon.Pun;
 using UnityEngine;
@@ -187,7 +187,7 @@ internal static class BackpackCarryTransfer
         }
 
         InventorySyncData inventorySyncData = IBinarySerializable.GetFromManagedArray<InventorySyncData>(data);
-        if (inventorySyncData.hasBackpack || forceSync)
+        if (inventorySyncData.backpackSlot.ItemID != 0 || forceSync)
         {
             return false;
         }
@@ -387,7 +387,7 @@ internal static class BackpackCarryTransfer
 
     private static bool HasBackpack(Character character)
     {
-        return character.player?.backpackSlot is { hasBackpack: true };
+        return character.player != null && !character.player.backpackSlot.IsEmpty();
     }
 
     private static void ClearCarrierHeldBackpack(Character carrier)
@@ -491,7 +491,7 @@ internal static class BackpackCarryTransfer
 
         private BackpackSlotSnapshot(BackpackSlot backpackSlot)
         {
-            hasBackpack = backpackSlot.hasBackpack;
+            hasBackpack = !backpackSlot.IsEmpty();
             prefab = backpackSlot.prefab;
             data = backpackSlot.data;
         }
@@ -503,12 +503,16 @@ internal static class BackpackCarryTransfer
 
         internal void Restore(Player player)
         {
-            BackpackSlot backpackSlot = new(BackpackSlotIndex)
+            BackpackSlot backpackSlot = new(BackpackSlotIndex);
+            if (hasBackpack)
             {
-                hasBackpack = hasBackpack,
-                prefab = prefab,
-                data = data,
-            };
+                backpackSlot.prefab = prefab;
+                backpackSlot.data = data;
+            }
+            else
+            {
+                backpackSlot.EmptyOut();
+            }
 
             player.backpackSlot = backpackSlot;
         }
@@ -524,3 +528,4 @@ internal static class BackpackCarryTransfer
         internal float ExpiresAt { get; }
     }
 }
+

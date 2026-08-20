@@ -1,4 +1,4 @@
-namespace BuddyClimb.Gameplay;
+﻿namespace BuddyClimb.Gameplay;
 
 internal static class BuddyClimbDiagnostics
 {
@@ -67,6 +67,7 @@ internal static class BuddyClimbDiagnostics
 
     private static bool HasBackpack(Character? character)
     {
-        return character?.player?.backpackSlot is { hasBackpack: true };
+        return character != null && character.player != null && !character.player.backpackSlot.IsEmpty();
     }
 }
+

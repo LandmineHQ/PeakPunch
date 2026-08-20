@@ -1,4 +1,4 @@
-using BuddyClimb.Compatibility;
+﻿using BuddyClimb.Compatibility;
 using HarmonyLib;
 
 namespace BuddyClimb.Patches;
@@ -30,7 +30,7 @@ internal static class CarrySpectatePatch
         }
 
         MainCameraMovement.specCharacter = spectateTarget;
-        __instance.Spectate();
+        __instance.Spectate(false);
         __instance.isSpectating = true;
     }
 
@@ -65,3 +65,4 @@ internal static class CarrySpectatePatch
         return true;
     }
 }
+

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.12
+
+- No gameplay change; version bump to republish after Thunderstore validation (0.1.11 already exists).
+
+
 ## 0.1.11 fix
 
 - Made the remote-only un-pass-out sync idempotent and send it before local Space drop requests, with the incoming drop RPC kept as a fallback, to avoid vanilla clients keeping the climber in a passed-out state.

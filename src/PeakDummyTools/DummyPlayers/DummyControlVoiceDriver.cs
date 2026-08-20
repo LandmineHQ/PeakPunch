@@ -1,5 +1,6 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Photon.Voice.Unity;
+using UnityEngine;
 
 namespace PeakDummyTools.DummyPlayers;
 
@@ -88,12 +89,20 @@ internal static class DummyControlVoiceDriver
 
     private static void EnableProximityVoiceTriggers(Character character)
     {
-        foreach (ProximityVoiceTrigger trigger in character.GetComponentsInChildren<ProximityVoiceTrigger>(true))
+        // PEAK 1.8+ removed ProximityVoiceTrigger - proximity now handled via Recorder/VoiceClientHandler.
+        // Keep as no-op for compatibility; re-enable any generic voice trigger components if present.
+        foreach (var trigger in character.GetComponentsInChildren<MonoBehaviour>(true))
         {
-            if (!trigger.enabled)
+            if (trigger == null) continue;
+            string typeName = trigger.GetType().Name;
+            if (typeName.Contains("Proximity") || typeName.Contains("VoiceTrigger"))
             {
-                trigger.enabled = true;
+                if (!trigger.enabled)
+                {
+                    trigger.enabled = true;
+                }
             }
         }
     }
 }
+

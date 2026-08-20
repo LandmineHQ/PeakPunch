@@ -1,4 +1,4 @@
-using HarmonyLib;
+﻿using HarmonyLib;
 using Photon.Pun;
 using BuddyClimb.Gameplay;
 using BuddyClimb.Localization;
@@ -117,7 +117,7 @@ internal static class CharacterInteractiblePatch
             return false;
         }
 
-        if (character.player.backpackSlot.hasBackpack && !BackpackCarryTransfer.AllowsCarrierBackpack)
+        if (!character.player.backpackSlot.IsEmpty() && !BackpackCarryTransfer.AllowsCarrierBackpack)
         {
             return false;
         }
@@ -234,3 +234,4 @@ internal static class CharacterInteractiblePatch
     }
 
 }
+

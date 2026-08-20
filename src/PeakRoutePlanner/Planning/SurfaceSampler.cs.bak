@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Diagnostics;
 using UnityEngine;
 
@@ -718,12 +718,6 @@ internal sealed class SurfaceSampler
         if (preserveSampleCache && requeueCachedFrontierSeeds)
         {
             RequeueCachedFrontierSeeds(includeTargetFrontier);
-        }
-
-        // 首次Route窗：贴地向篝火拉长窄走廊，解决超长下坡窗外漏扫
-        if (!preserveSampleCache && !includeTargetFrontier && sampleFullWindowBySlices)
-        {
-            TryBuildGuideCorridor();
         }
     }
 
@@ -1868,12 +1862,8 @@ internal sealed class SurfaceSampler
         if (source.Kind == SurfaceKind.Standable && candidate.Kind == SurfaceKind.Standable)
         {
             float verticalDelta = candidate.Position.y - source.Position.y;
-            bool isDownhill = verticalDelta < -0.1f;
-            float horizDownhill = Vector2.Distance(new Vector2(source.Position.x, source.Position.z), new Vector2(candidate.Position.x, candidate.Position.z));
-            // 下坡放宽：落差6m内且水平<4m视为可Walk，水平小落差更大也放行，避免超长下坡被误判不可走
-            float allowedDrop = isDownhill ? (horizDownhill < 2.0f ? 6.0f : config.MaxWalkDropHeight + 2.0f) : config.MaxWalkDropHeight + 0.1f;
             if (verticalDelta > config.MaxWalkStepUpHeight + 0.05f
-                || -verticalDelta > allowedDrop)
+                || -verticalDelta > config.MaxWalkDropHeight + 0.1f)
             {
                 ContinuityRejectedCount++;
                 return false;
@@ -1884,15 +1874,11 @@ internal sealed class SurfaceSampler
             && candidate.ColliderId != 0
             && source.ColliderId != candidate.ColliderId
             && source.Kind == SurfaceKind.Standable
-            && candidate.Kind == SurfaceKind.Standable)
+            && candidate.Kind == SurfaceKind.Standable
+            && Mathf.Abs(candidate.Position.y - source.Position.y) > config.MaxWalkStepUpHeight)
         {
-            float yDelta2 = candidate.Position.y - source.Position.y;
-            float allowedAbs = yDelta2 < -0.2f ? 6.0f : config.MaxWalkStepUpHeight;
-            if (Mathf.Abs(yDelta2) > allowedAbs)
-            {
-                ContinuityRejectedCount++;
-                return false;
-            }
+            ContinuityRejectedCount++;
+            return false;
         }
 
         bool isAirTransferSurfaceProbe = IsAirTransferSurfaceProbe(query, source, candidate);
@@ -1987,11 +1973,7 @@ internal sealed class SurfaceSampler
 
     private float GetReachableCandidateDistanceLimit(SurfaceQuery query, SurfacePoint source, HitCandidate candidate)
     {
-        float baseLimit = Mathf.Max(config.SurfaceNeighborDistance * 1.5f, corridorSpacing * 2.25f);
-        // 下坡或平地Walk适当放宽，避免3m走廊步被1.1m限卡
-        bool isDownhill = candidate.Position.y < source.Position.y - 0.2f;
-        float downhillBonus = isDownhill ? 3.5f : 0f;
-        float defaultLimit = baseLimit + downhillBonus;
+        float defaultLimit = Mathf.Max(config.SurfaceNeighborDistance * 1.5f, corridorSpacing * 2.25f);
         if (query.Kind == QueryKind.Directed
             && source.Kind == SurfaceKind.Standable
             && candidate.Kind == SurfaceKind.Climbable)
@@ -2108,26 +2090,17 @@ internal sealed class SurfaceSampler
             new Vector2(source.Position.x, source.Position.z),
             new Vector2(candidate.Position.x, candidate.Position.z));
         float verticalDelta = candidate.Position.y - source.Position.y;
-        float allowedDrop = verticalDelta < -0.2f ? Mathf.Max(config.MaxStandJumpDropHeight, 6.0f) : config.MaxStandJumpDropHeight;
         if (horizontalDistance > config.MaxStandJumpDistance
             || verticalDelta > config.MaxStandJumpUpHeight
-            || -verticalDelta > allowedDrop)
+            || -verticalDelta > config.MaxStandJumpDropHeight)
         {
             return false;
         }
 
-        // 下落时小水平视为0消耗，不做体力校验
-        if (verticalDelta < -0.25f && horizontalDistance < 0.45f)
+        bool sprintJump = horizontalDistance > config.NormalStandJumpDistance + 0.05f;
+        if (!staminaModel.CanAffordJump(sprintJump))
         {
-            // fall 0 cost, skip stamina check
-        }
-        else
-        {
-            bool sprintJump = horizontalDistance > config.NormalStandJumpDistance + 0.05f;
-            if (!staminaModel.CanAffordJump(sprintJump))
-            {
-                return false;
-            }
+            return false;
         }
 
         if (!HasClearAirPathBetween(source, candidate))
@@ -2530,34 +2503,12 @@ internal sealed class SurfaceSampler
         float horizontalDistance = Vector2.Distance(
             new Vector2(source.Position.x, source.Position.z),
             new Vector2(target.Position.x, target.Position.z));
-        float verticalDelta = target.Position.y - source.Position.y;
-        // 下落时垂直分量视为0消耗，水平仍按跳跃计费
-        if (verticalDelta < -0.25f && horizontalDistance < 0.45f)
-        {
-            return 0f;
-        }
         bool sprintJump = horizontalDistance > config.NormalStandJumpDistance + 0.05f;
         return staminaModel.GetJumpCost(sprintJump);
     }
 
     private float EstimateSurfaceEdgeStaminaCost(SurfacePoint source, SurfacePoint target, Vector3 direction, float distance)
     {
-        float verticalDelta = target.Position.y - source.Position.y;
-        float horizontalDistance = Vector2.Distance(
-            new Vector2(source.Position.x, source.Position.z),
-            new Vector2(target.Position.x, target.Position.z));
-        // 下落攀爬整体视为0，但保留水平跳跃费用
-        if (verticalDelta < -0.35f)
-        {
-            if (horizontalDistance < 0.45f)
-            {
-                return 0f;
-            }
-            // 有水平位移的下落，仍按水平跳跃计费
-            bool sprintJump = horizontalDistance > config.NormalStandJumpDistance + 0.05f;
-            return staminaModel.GetJumpCost(sprintJump);
-        }
-
         if (source.Kind == SurfaceKind.Climbable && target.Kind == SurfaceKind.Climbable)
         {
             Vector3 sourceNormal = source.Normal.sqrMagnitude > 0.001f ? source.Normal.normalized : Vector3.zero;
@@ -2773,135 +2724,9 @@ internal sealed class SurfaceSampler
             : Vector3.Distance(position, startPosition);
         float guideDistance = guideProjection.Project(position).Distance;
         float kindPenalty = points[pointId].Kind == SurfaceKind.Standable ? 0f : 2f;
-        // A* heuristic: heavily favor target direction, reduce guide weight for first scan
-        float heuristic = oppositeDistance * 0.9f + guideDistance * 0.12f + kindPenalty;
-        // Penalize lateral deviation more on flat ground to keep window sliding forward
-        float lateralPenalty = Mathf.Abs(Vector3.Dot(position - startPosition, Vector3.Cross(Vector3.up, (targetPosition - startPosition).normalized))) * 0.08f;
         frontierSeeds.Enqueue(
             new FrontierSeed(pointId, side, center),
-            heuristic + lateralPenalty);
-    }
-
-    private void EnqueueCorridorSeed(int pointId)
-    {
-        if (pointId < 0 || pointId >= points.Count || points[pointId].Kind == SurfaceKind.Blocked)
-        {
-            return;
-        }
-        // 走廊种子不受当前窗限制，强制播种以拉长窄空气走廊
-        LayeredGridKey seedKey = ToSeedKey(points[pointId].Position);
-        if (expandedSeedKeys.Contains(new ExpandedSeedKey(seedKey, FrontierSide.Start, expansionBucket)))
-        {
-            return;
-        }
-        if (!queuedSeedKeys.Add(new LayeredSeedKey(seedKey, FrontierSide.Start)))
-        {
-            return;
-        }
-        Vector3 pos = points[pointId].Position;
-        Vector2 center = new(pos.x, pos.z);
-        float distToTarget = Vector3.Distance(pos, targetPosition);
-        float guideDist = guideProjection.Project(pos).Distance;
-        float kindPenalty = points[pointId].Kind == SurfaceKind.Standable ? 0f : 2f;
-        float priority = distToTarget * 0.85f + guideDist * 0.1f + kindPenalty;
-        frontierSeeds.Enqueue(new FrontierSeed(pointId, FrontierSide.Start, center), priority);
-    }
-
-    internal bool TryBuildGuideCorridor(int maxSteps = 80, float stepDistance = 1.8f)
-    {
-        if (config == null || points.Count == 0 || StartIndex < 0) return false;
-        if (Vector3.Distance(startPosition, targetPosition) < samplingWindowRadius * 1.2f)
-        {
-            return false;
-        }
-        int added = 0;
-        Vector3 currentPos = startPosition;
-        // 用起始点法线作初始高度
-        for (int step = 0; step < maxSteps; step++)
-        {
-            Vector3 toTarget = targetPosition - currentPos;
-            toTarget.y = 0f;
-            float remain = toTarget.magnitude;
-            if (remain < stepDistance * 0.6f) break;
-            Vector3 dir = toTarget.normalized;
-            Vector3 nextHoriz = currentPos + dir * stepDistance;
-            // 贴地投影：从高处向下找可站立面
-            Vector3 probeOrigin = nextHoriz + Vector3.up * 18f;
-            int hitCount = Physics.RaycastNonAlloc(probeOrigin, Vector3.down, TerrainHitBuffer, 36f, surfaceBlockerMask, QueryTriggerInteraction.Ignore);
-            int bestIdx = -1;
-            float bestSqr = float.MaxValue;
-            Vector3 bestPoint = default;
-            Vector3 bestNormal = Vector3.up;
-            int bestCollider = 0;
-            SurfaceKind bestKind = SurfaceKind.Blocked;
-            for (int h = 0; h < hitCount; h++)
-            {
-                var hit = TerrainHitBuffer[h];
-                if (hit.collider == null) continue;
-                SurfaceKind k = ClassifySurfaceHit(hit);
-                if (k == SurfaceKind.Blocked) continue;
-                HitCandidate cand = new(hit.point, hit.normal, hit.collider.GetInstanceID(), k, hit.distance);
-                if (k == SurfaceKind.Standable && IsOccludedStandableSurface(cand)) continue;
-                float sqr = (hit.point - nextHoriz).sqrMagnitude;
-                if (sqr < bestSqr)
-                {
-                    bestSqr = sqr;
-                    bestIdx = h;
-                    bestPoint = hit.point;
-                    bestNormal = hit.normal;
-                    bestCollider = hit.collider.GetInstanceID();
-                    bestKind = k;
-                }
-            }
-            if (bestIdx < 0) break;
-            // 仅保留可站立的走廊点，墙面不进走廊（避免穿墙走廊）
-            if (bestKind != SurfaceKind.Standable) break;
-            // Walk校验：与前一点是否可直走
-            SurfacePoint prev = points[StartIndex];
-            // 用最近已添加走廊点作为前驱更准
-            if (added > 0)
-            {
-                // 找最近走廊点作为前驱
-                for (int p = points.Count - 1; p >= 0; p--)
-                {
-                    if (points[p].Kind == SurfaceKind.Standable)
-                    {
-                        prev = points[p];
-                        break;
-                    }
-                }
-            }
-            HitCandidate nextCand = new(bestPoint, bestNormal, bestCollider, bestKind, 0f);
-            bool walkOk = false;
-            // 简化：先用胶囊可走校验，若无前驱则放行
-            try
-            {
-                walkOk = CanProbeMoveStandable(prev, nextCand) || Vector3.Distance(prev.Position, bestPoint) < 4.0f;
-            }
-            catch { walkOk = true; }
-            if (!walkOk)
-            {
-                // 遇墙/断崖，走廊终止，交由A*窗处理
-                break;
-            }
-            int id = AddPoint(bestPoint, bestNormal, bestCollider, bestKind);
-            if (id >= 0)
-            {
-                EnqueueCorridorSeed(id);
-                added++;
-                currentPos = bestPoint;
-            }
-            else
-            {
-                break;
-            }
-            if (Vector3.Distance(currentPos, targetPosition) < 6f) break;
-        }
-        if (added > 0)
-        {
-            Plugin.Log.LogInfo($"Guide corridor built: steps={added}, start=({startPosition.x:0.0},{startPosition.y:0.0},{startPosition.z:0.0}) target=({targetPosition.x:0.0},{targetPosition.y:0.0},{targetPosition.z:0.0})");
-        }
-        return added > 0;
+            oppositeDistance + guideDistance * 0.35f + kindPenalty);
     }
 
     private void RequeueCachedFrontierSeeds(bool includeTargetFrontier)
@@ -3201,9 +3026,7 @@ internal sealed class SurfaceSampler
             surfaceBlockerMask,
             MaxSurfaceAirReachableCells,
             activeWindowForwardHalfExtent,
-            routeSurfaceAirCache,
-            targetPosition,
-            hasTargetPosition: true);
+            routeSurfaceAirCache);
     }
 
     private void FinalizeActiveSurfaceAirField(SurfaceAirField.Builder builder, SurfacePoint seed)
@@ -4666,16 +4489,3 @@ internal sealed class SurfaceSampler
         AirBoundary,
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
