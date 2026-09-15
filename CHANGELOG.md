@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.13
+
+- Rebuilt double-backpack transfer as a client-side swap: the old carried backpack is moved into the carrier slot and dropped with PEAK's vanilla slot-drop RPC, instead of requesting MasterClient-only actions or suppressing delayed inventory syncs.
+- Guarded backpack transfer so the carried player's inventory must be locally owned; remote carried players are never modified from another client.
+- Preserved `BackpackSlot.backpackType` during backpack transfers and rollbacks.
+- Removed the obsolete `PlayerInventoryPatch` inventory-sync suppression.
+
 ## 0.1.12
 
 - No gameplay change; version bump to republish after Thunderstore validation (0.1.11 already exists).
