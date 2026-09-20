@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using BuddyClimb.Configuration;
 using Photon.Pun;
 using UnityEngine;
@@ -10,11 +11,14 @@ internal enum BackpackPreparationResult
 {
     Failed,
     Ready,
+    Deferred,
 }
 
 internal static class BackpackCarryTransfer
 {
+    private const float PendingTransferTimeoutSeconds = 5f;
     private static readonly byte BackpackSlotIndex = (byte)Player.BACKPACKSLOTINDEX;
+    private static readonly Dictionary<int, PendingBackpackTransfer> PendingTransfers = [];
 
     internal static bool AllowsCarrierBackpack => BuddyClimbConfig.EnableBackpackTransfer.Value;
 
@@ -42,12 +46,13 @@ internal static class BackpackCarryTransfer
         return CanSyncInventory(carrierPlayer)
             && CanSyncInventory(carriedPlayer)
             && IsLocallyOwnedPlayer(carriedPlayer)
-            && (!HasBackpack(carried) || CanDropBackpackWithVanillaSlotDrop(carrier));
+            && (!HasBackpack(carried) || CanDropBackpackWithVanillaSlotDrop(carried));
     }
 
     internal static BackpackPreparationResult PrepareBackpacksForClimb(Character carrier, Character carried)
     {
         BuddyClimbDiagnostics.LogCarry($"PrepareBackpacksForClimb entered: {BuddyClimbDiagnostics.DescribeViews(carrier, carried)}");
+        PruneExpiredTransfers();
 
         if (!AllowsCarrierBackpack
             || carrier == null
@@ -58,121 +63,258 @@ internal static class BackpackCarryTransfer
             return BackpackPreparationResult.Ready;
         }
 
+        if (TryGetPendingTransfer(carried, out PendingBackpackTransfer pendingTransfer))
+        {
+            if (pendingTransfer.Carrier == carrier)
+            {
+                BuddyClimbDiagnostics.LogCarry($"Ignoring duplicate BuddyClimb backpack transfer request while the first request is pending: {BuddyClimbDiagnostics.DescribeViews(carrier, carried)}");
+                return BackpackPreparationResult.Deferred;
+            }
+
+            Plugin.Log.LogWarning($"Ignoring BuddyClimb backpack transfer to {carrier.characterName} because another transfer is already pending for {carried.characterName}.");
+            return BackpackPreparationResult.Failed;
+        }
+
         if (!CanTransferCarrierBackpack(carrier, carried))
         {
             BuddyClimbDiagnostics.LogCarry($"PrepareBackpacksForClimb returning Failed because CanTransferCarrierBackpack=false: {BuddyClimbDiagnostics.DescribeViews(carrier, carried)}");
             return BackpackPreparationResult.Failed;
         }
 
-        bool hasCarriedBackpack = HasBackpack(carried);
-        if (hasCarriedBackpack)
+        if (!HasBackpack(carried))
         {
-            BackpackSlotSnapshot carrierBackpackSnapshot = BackpackSlotSnapshot.Capture(carrier.player);
-            BackpackSlotSnapshot carriedBackpackSnapshot = BackpackSlotSnapshot.Capture(carried.player);
+            return BeginCarrierBackpackTransfer(carrier, carried, dropCarriedBackpack: false);
+        }
 
-            try
+        return BeginCarrierBackpackTransfer(carrier, carried, dropCarriedBackpack: true);
+    }
+
+    internal static void HandleInventorySync(Player player, byte[] data, bool forceSync)
+    {
+        if (forceSync || player == null || player.photonView == null || data == null)
+        {
+            return;
+        }
+
+        PendingBackpackTransfer? pendingTransfer = FindPendingTransfer(player);
+        if (pendingTransfer == null)
+        {
+            return;
+        }
+
+        if (Time.realtimeSinceStartup > pendingTransfer.ExpiresAt)
+        {
+            RemovePendingTransfer(pendingTransfer.Carried);
+            RestoreCarrierBackpackAfterTimeout(pendingTransfer);
+            Plugin.Log.LogWarning($"Timed out waiting for BuddyClimb backpack transfer confirmation for {pendingTransfer.Carried.characterName}.");
+            return;
+        }
+
+        InventorySyncData inventorySyncData = IBinarySerializable.GetFromManagedArray<InventorySyncData>(data);
+        if (inventorySyncData.backpackType != 0 || inventorySyncData.backpackSlot.ItemID != ushort.MaxValue)
+        {
+            return;
+        }
+
+        if (pendingTransfer.Carried.player == player)
+        {
+            if (!pendingTransfer.NeedsCarriedDrop)
             {
-                AssignBackpack(carried.player, carrier.player.backpackSlot);
-                AssignBackpack(carrier.player, carriedBackpackSnapshot.RestoredSlot());
-                ClearCarrierHeldBackpack(carrier);
+                return;
+            }
 
-                SyncInventory(carried.player);
-                SyncInventory(carrier.player);
-
-                if (!TryDropOldCarriedBackpackFromCarrierSlot(carrier))
+            pendingTransfer.CarriedSlotCleared = true;
+            if (!pendingTransfer.CarrierRemovalRequested && !pendingTransfer.CarrierSlotCleared)
+            {
+                if (!TryRequestCarrierBackpackRemoval(pendingTransfer.Carrier))
                 {
-                    RestoreBackpackSlots(carrier, carried, carrierBackpackSnapshot, carriedBackpackSnapshot);
-                    BuddyClimbDiagnostics.LogCarry($"PrepareBackpacksForClimb failed because the carried backpack could not be dropped from the carrier slot: {BuddyClimbDiagnostics.DescribeViews(carrier, carried)}");
-                    return BackpackPreparationResult.Failed;
+                    RemovePendingTransfer(pendingTransfer.Carried);
+                    Plugin.Log.LogWarning($"Unable to request the next BuddyClimb backpack transfer phase for {pendingTransfer.Carried.characterName}.");
+                    return;
                 }
 
-                BuddyClimbDiagnostics.LogCarry($"PrepareBackpacksForClimb swapped backpacks and dropped the old carried backpack from the carrier slot: {BuddyClimbDiagnostics.DescribeViews(carrier, carried)}");
-                return BackpackPreparationResult.Ready;
+                pendingTransfer.CarrierRemovalRequested = true;
+            }
+        }
+        else if (pendingTransfer.Carrier.player == player)
+        {
+            if (!pendingTransfer.CarrierRemovalRequested)
+            {
+                return;
+            }
+
+            pendingTransfer.CarrierSlotCleared = true;
+        }
+        else
+        {
+            return;
+        }
+
+        if ((pendingTransfer.NeedsCarriedDrop && !pendingTransfer.CarriedSlotCleared)
+            || !pendingTransfer.CarrierSlotCleared)
+        {
+            return;
+        }
+
+        RemovePendingTransfer(pendingTransfer.Carried);
+
+        if (!TryApplyTransferredBackpack(
+                pendingTransfer.Carrier,
+                pendingTransfer.Carried,
+                pendingTransfer.CarrierBackpack,
+                syncInventory: true))
+        {
+            Plugin.Log.LogWarning($"Unable to apply the deferred BuddyClimb backpack transfer for {pendingTransfer.Carried.characterName}.");
+            return;
+        }
+
+        BuddyClimbCarryStarter.TryStartCarry(pendingTransfer.Carrier, pendingTransfer.Carried);
+    }
+
+    private static BackpackPreparationResult BeginCarrierBackpackTransfer(
+        Character carrier,
+        Character carried,
+        bool dropCarriedBackpack)
+    {
+        Player carrierPlayer = carrier.player;
+        Player carriedPlayer = carried.player;
+        if (!CanSyncInventory(carrierPlayer)
+            || !CanSyncInventory(carriedPlayer)
+            || !IsLocallyOwnedPlayer(carriedPlayer)
+            || (dropCarriedBackpack && !CanDropBackpackWithVanillaSlotDrop(carried)))
+        {
+            return BackpackPreparationResult.Failed;
+        }
+
+        BackpackSlot carrierBackpack = CloneBackpackSlot(carrierPlayer.backpackSlot);
+        if (carrierBackpack.IsEmpty())
+        {
+            return BackpackPreparationResult.Failed;
+        }
+
+        ClearCarrierHeldBackpack(carrier);
+
+        if (PhotonNetwork.IsMasterClient)
+        {
+            try
+            {
+                if (dropCarriedBackpack)
+                {
+                    carried.refs.items.DropItemFromSlotRPC(
+                        BackpackSlotIndex,
+                        GetBackpackDropPosition(carried));
+                }
+
+                carrierPlayer.EmptySlot(Optionable<byte>.Some(BackpackSlotIndex), true);
             }
             catch (System.Exception ex)
             {
-                RestoreBackpackSlots(carrier, carried, carrierBackpackSnapshot, carriedBackpackSnapshot);
-                Plugin.Log.LogWarning($"Unable to complete BuddyClimb double-backpack transfer: {ex}");
+                Plugin.Log.LogWarning($"Unable to drop the old carried backpack on the MasterClient: {ex}");
+                return BackpackPreparationResult.Failed;
+            }
+
+            return TryApplyTransferredBackpack(
+                    carrier,
+                    carried,
+                    carrierBackpack,
+                    syncInventory: true)
+                ? BackpackPreparationResult.Ready
+                : BackpackPreparationResult.Failed;
+        }
+
+        try
+        {
+            if (dropCarriedBackpack)
+            {
+                RequestCarriedBackpackDrop(carried);
+            }
+
+            if (!dropCarriedBackpack && !TryRequestCarrierBackpackRemoval(carrier))
+            {
                 return BackpackPreparationResult.Failed;
             }
         }
+        catch (System.Exception ex)
+        {
+            Plugin.Log.LogWarning($"Unable to request the BuddyClimb backpack preparation from the MasterClient: {ex}");
+            return BackpackPreparationResult.Failed;
+        }
 
-        bool transferred = TryTransferCarrierBackpack(carrier, carried, syncInventory: true);
-        BuddyClimbDiagnostics.LogCarry($"PrepareBackpacksForClimb transfer without carried backpack result={transferred}: {BuddyClimbDiagnostics.DescribeViews(carrier, carried)}");
-        return transferred
-            ? BackpackPreparationResult.Ready
-            : BackpackPreparationResult.Failed;
+        PendingTransfers[carried.photonView.ViewID] = new PendingBackpackTransfer(
+            carrier,
+            carried,
+            carrierBackpack,
+            dropCarriedBackpack,
+            Time.realtimeSinceStartup + PendingTransferTimeoutSeconds);
+
+        PendingTransfers[carried.photonView.ViewID].CarrierRemovalRequested = !dropCarriedBackpack;
+
+        BuddyClimbDiagnostics.LogCarry($"Waiting for the MasterClient to clear the required backpack slots: {BuddyClimbDiagnostics.DescribeViews(carrier, carried)}");
+        return BackpackPreparationResult.Deferred;
     }
 
-    private static bool TryTransferCarrierBackpack(Character carrier, Character carried, bool syncInventory)
+    private static void RequestCarriedBackpackDrop(Character carried)
     {
-        if (!AllowsCarrierBackpack
-            || carrier == null
-            || carried == null
-            || !HasBackpack(carrier))
+        carried.refs.items.photonView.RPC(
+            nameof(CharacterItems.DropItemFromSlotRPC),
+            RpcTarget.MasterClient,
+            BackpackSlotIndex,
+            GetBackpackDropPosition(carried));
+    }
+
+    private static bool TryRequestCarrierBackpackRemoval(Character carrier)
+    {
+        if (!CanSyncInventory(carrier.player))
         {
+            return false;
+        }
+
+        try
+        {
+            carrier.player.photonView.RPC(
+                nameof(Player.RPCRemoveItemFromSlot),
+                RpcTarget.MasterClient,
+                BackpackSlotIndex);
+
             return true;
         }
-
-        Player carrierPlayer = carrier.player;
-        Player carriedPlayer = carried.player;
-        if (!CanSyncInventory(carrierPlayer) || !CanSyncInventory(carriedPlayer))
+        catch (System.Exception ex)
         {
-            Plugin.Log.LogWarning("Skipping backpack transfer because a Player inventory reference is unavailable.");
+            Plugin.Log.LogWarning($"Unable to request removal of {carrier.characterName}'s backpack: {ex}");
+            return false;
+        }
+    }
+
+    private static bool TryApplyTransferredBackpack(
+        Character carrier,
+        Character carried,
+        BackpackSlot carrierBackpack,
+        bool syncInventory)
+    {
+        if (carrier == null
+            || carried == null
+            || carrierBackpack == null
+            || carrierBackpack.IsEmpty()
+            || !CanSyncInventory(carrier.player)
+            || !CanSyncInventory(carried.player)
+            || !IsLocallyOwnedPlayer(carried.player))
+        {
             return false;
         }
 
-        if (HasBackpack(carried))
-        {
-            Plugin.Log.LogWarning($"Skipping backpack transfer because {carried.characterName} is still wearing a backpack.");
-            return false;
-        }
-
-        AssignBackpack(carriedPlayer, carrierPlayer.backpackSlot);
-        carrierPlayer.backpackSlot = new BackpackSlot(BackpackSlotIndex);
-        ClearCarrierHeldBackpack(carrier);
+        AssignBackpack(carried.player, carrierBackpack);
+        carrier.player.backpackSlot = new BackpackSlot(BackpackSlotIndex);
 
         carried.refs.afflictions.UpdateWeight();
         carrier.refs.afflictions.UpdateWeight();
 
         if (syncInventory)
         {
-            SyncInventory(carriedPlayer);
-            SyncInventory(carrierPlayer);
+            SyncInventory(carried.player);
+            SyncInventory(carrier.player);
         }
 
         return true;
-    }
-
-    private static bool TryDropOldCarriedBackpackFromCarrierSlot(Character carrier)
-    {
-        if (!HasBackpack(carrier))
-        {
-            return true;
-        }
-
-        if (!CanDropBackpackWithVanillaSlotDrop(carrier))
-        {
-            Plugin.Log.LogWarning($"Unable to drop the old carried backpack through {carrier.characterName}'s CharacterItems because the CharacterItems or PhotonView is unavailable.");
-            return false;
-        }
-
-        try
-        {
-            carrier.refs.items.photonView.RPC(
-                nameof(CharacterItems.DropItemFromSlotRPC),
-                RpcTarget.All,
-                BackpackSlotIndex,
-                GetBackpackDropPosition(carrier));
-
-            SyncInventory(carrier.player);
-            return true;
-        }
-        catch (System.Exception ex)
-        {
-            Plugin.Log.LogWarning($"Unable to drop the old carried backpack through {carrier.characterName}'s backpack slot: {ex}");
-            return false;
-        }
     }
 
     internal static void ClearHeldBackpackAfterTransfer(Character carrier)
@@ -211,64 +353,6 @@ internal static class BackpackCarryTransfer
         characterItems.onSlotEquipped?.Invoke();
     }
 
-    private static void RestoreBackpackSlots(
-        Character carrier,
-        Character carried,
-        BackpackSlotSnapshot carrierBackpackSnapshot,
-        BackpackSlotSnapshot carriedBackpackSnapshot)
-    {
-        Plugin.Log.LogWarning($"Rolling back BuddyClimb backpack transfer for {carried.characterName}.");
-
-        carrierBackpackSnapshot.Restore(carrier.player);
-        carriedBackpackSnapshot.Restore(carried.player);
-        carrier.refs.afflictions.UpdateWeight();
-        carried.refs.afflictions.UpdateWeight();
-
-        SyncInventory(carrier.player);
-        SyncInventory(carried.player);
-
-        // The failure path may have already detached a held backpack from carrier.
-        // Refresh the native visual/equip state so the restored slot does not leave
-        // a stale held-item visual or selected backpack slot behind.
-        ClearHeldBackpackAfterTransfer(carrier);
-    }
-
-    private static void AssignBackpack(Player player, BackpackSlot source)
-    {
-        if (!CanSyncInventory(player))
-        {
-            throw new System.InvalidOperationException($"Cannot assign backpack because {player.name}'s inventory is unavailable.");
-        }
-
-        BackpackSlot destination = new BackpackSlot(BackpackSlotIndex)
-        {
-            backpackType = source.backpackType,
-        };
-
-        if (!source.IsEmpty())
-        {
-            destination.SetItem(source.prefab, source.data);
-        }
-        else
-        {
-            destination.EmptyOut();
-        }
-
-        player.backpackSlot = destination;
-    }
-
-    private static void SyncInventory(Player player)
-    {
-        byte[] data = IBinarySerializable.ToManagedArray(
-            new InventorySyncData(player.itemSlots, player.backpackSlot, player.tempFullSlot));
-
-        player.photonView.RPC(
-            nameof(Player.SyncInventoryRPC),
-            RpcTarget.All,
-            data,
-            true);
-    }
-
     private static void ClearCarrierHeldBackpack(Character carrier)
     {
         ClearHeldBackpackAfterTransfer(carrier);
@@ -288,6 +372,42 @@ internal static class BackpackCarryTransfer
             RpcTarget.Others,
             -1,
             -1);
+    }
+
+    private static void AssignBackpack(Player player, BackpackSlot source)
+    {
+        player.backpackSlot = CloneBackpackSlot(source);
+    }
+
+    private static BackpackSlot CloneBackpackSlot(BackpackSlot source)
+    {
+        BackpackSlot clone = new BackpackSlot(BackpackSlotIndex)
+        {
+            backpackType = source.backpackType,
+        };
+
+        if (!source.IsEmpty())
+        {
+            clone.SetItem(source.prefab, source.data);
+        }
+        else
+        {
+            clone.EmptyOut();
+        }
+
+        return clone;
+    }
+
+    private static void SyncInventory(Player player)
+    {
+        byte[] data = IBinarySerializable.ToManagedArray(
+            new InventorySyncData(player.itemSlots, player.backpackSlot, player.tempFullSlot));
+
+        player.photonView.RPC(
+            nameof(Player.SyncInventoryRPC),
+            RpcTarget.All,
+            data,
+            true);
     }
 
     private static bool IsBackpackSlotSelected(CharacterItems characterItems)
@@ -335,53 +455,122 @@ internal static class BackpackCarryTransfer
             && player.photonView.IsMine;
     }
 
-    private readonly struct BackpackSlotSnapshot
+    private static PendingBackpackTransfer? FindPendingTransfer(Player player)
     {
-        private readonly bool hasBackpack;
-        private readonly BackpackSlot.BackpackType backpackType;
-        private readonly Item? prefab;
-        private readonly ItemInstanceData data;
-
-        private BackpackSlotSnapshot(BackpackSlot backpackSlot)
+        foreach (PendingBackpackTransfer pendingTransfer in PendingTransfers.Values)
         {
-            hasBackpack = !backpackSlot.IsEmpty();
-            backpackType = backpackSlot.backpackType;
-            prefab = backpackSlot.prefab;
-            data = backpackSlot.data;
-        }
-
-        internal static BackpackSlotSnapshot Capture(Player player)
-        {
-            return new BackpackSlotSnapshot(player.backpackSlot);
-        }
-
-        internal BackpackSlot RestoredSlot()
-        {
-            BackpackSlot backpackSlot = new BackpackSlot(BackpackSlotIndex)
+            if (pendingTransfer.Carrier.player == player || pendingTransfer.Carried.player == player)
             {
-                backpackType = backpackType,
-            };
-
-            if (hasBackpack)
-            {
-                backpackSlot.SetItem(prefab, data);
+                return pendingTransfer;
             }
-            else
-            {
-                backpackSlot.EmptyOut();
-            }
-
-            return backpackSlot;
         }
 
-        internal void Restore(Player player)
+        return null;
+    }
+
+    private static bool TryGetPendingTransfer(Character carried, out PendingBackpackTransfer pendingTransfer)
+    {
+        pendingTransfer = null!;
+        if (carried?.photonView == null
+            || !PendingTransfers.TryGetValue(carried.photonView.ViewID, out PendingBackpackTransfer? pending))
         {
-            if (!CanSyncInventory(player))
+            return false;
+        }
+
+        pendingTransfer = pending;
+        if (Time.realtimeSinceStartup <= pendingTransfer.ExpiresAt)
+        {
+            return true;
+        }
+
+        RemovePendingTransfer(carried);
+        RestoreCarrierBackpackAfterTimeout(pendingTransfer);
+        pendingTransfer = null!;
+        return false;
+    }
+
+    private static void RemovePendingTransfer(Character carried)
+    {
+        if (carried?.photonView != null)
+        {
+            PendingTransfers.Remove(carried.photonView.ViewID);
+        }
+    }
+
+    private static void PruneExpiredTransfers()
+    {
+        List<int>? expiredViewIds = null;
+        foreach (KeyValuePair<int, PendingBackpackTransfer> pendingTransfer in PendingTransfers)
+        {
+            if (Time.realtimeSinceStartup <= pendingTransfer.Value.ExpiresAt)
             {
-                return;
+                continue;
             }
 
-            player.backpackSlot = RestoredSlot();
+            expiredViewIds ??= [];
+            expiredViewIds.Add(pendingTransfer.Key);
         }
+
+        if (expiredViewIds == null)
+        {
+            return;
+        }
+
+        foreach (int viewId in expiredViewIds)
+        {
+            if (PendingTransfers.Remove(viewId, out PendingBackpackTransfer? pendingTransfer))
+            {
+                RestoreCarrierBackpackAfterTimeout(pendingTransfer);
+            }
+        }
+    }
+
+    private static void RestoreCarrierBackpackAfterTimeout(PendingBackpackTransfer pendingTransfer)
+    {
+        if (!pendingTransfer.CarrierRemovalRequested || pendingTransfer.CarrierSlotCleared)
+        {
+            return;
+        }
+
+        if (!CanSyncInventory(pendingTransfer.Carrier.player))
+        {
+            return;
+        }
+
+        AssignBackpack(pendingTransfer.Carrier.player, pendingTransfer.CarrierBackpack);
+        SyncInventory(pendingTransfer.Carrier.player);
+    }
+
+    private sealed class PendingBackpackTransfer
+    {
+        internal PendingBackpackTransfer(
+            Character carrier,
+            Character carried,
+            BackpackSlot carrierBackpack,
+            bool needsCarriedDrop,
+            float expiresAt)
+        {
+            Carrier = carrier;
+            Carried = carried;
+            CarrierBackpack = carrierBackpack;
+            NeedsCarriedDrop = needsCarriedDrop;
+            ExpiresAt = expiresAt;
+        }
+
+        internal Character Carrier { get; }
+
+        internal Character Carried { get; }
+
+        internal BackpackSlot CarrierBackpack { get; }
+
+        internal float ExpiresAt { get; }
+
+        internal bool NeedsCarriedDrop { get; }
+
+        internal bool CarriedSlotCleared { get; set; }
+
+        internal bool CarrierRemovalRequested { get; set; }
+
+        internal bool CarrierSlotCleared { get; set; }
     }
 }

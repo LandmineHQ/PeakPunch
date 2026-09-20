@@ -31,7 +31,8 @@ src/
 │       ├── CharacterCarryingPatch.cs         # RPCA_StartCarry/Drop, isCarried/carrier state
 │       ├── CharacterInteractiblePatch.cs     # Primary hook: climb prompt, interaction stacking
 │       ├── CharacterMovementPatch.cs         # Jump suppression while carried
-│       └── ItemBackpackVisualPatch.cs        # Item renderer management in backpack
+│       ├── ItemBackpackVisualPatch.cs        # Item renderer management in backpack
+│       └── PlayerInventoryPatch.cs           # Completes deferred backpack transfer after native Master sync
 │
 ├── PeakDummyTools/                # Tooling mod: dummy player spawning & control
 │   ├── PeakDummyTools.csproj

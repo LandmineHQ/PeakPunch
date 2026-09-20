@@ -209,6 +209,12 @@ internal static class CharacterInteractiblePatch
             return true;
         }
 
+        if (preparationResult == BackpackPreparationResult.Deferred)
+        {
+            BuddyClimbDiagnostics.LogCarry("TryStartClimb is waiting for MasterClient backpack removal confirmation.");
+            return true;
+        }
+
         if (preparationResult == BackpackPreparationResult.Ready)
         {
             bool startSent = BuddyClimbCarryStarter.TryStartCarry(character, interactor);

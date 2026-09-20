@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.14
+
+- Fixed backpack transfer ordering: the local client now requests the MasterClient's native slot removal for the carrier backpack, waits for the native inventory confirmation, and only then assigns the captured backpack to the carried player. When the carried player also has a backpack, its own backpack is dropped through the MasterClient's native slot-drop path instead of being moved into another slot.
+- Coalesced repeated climb interactions while backpack preparation is delayed so the same native transfer requests are not sent multiple times.
+- Kept the deferred completion entirely client-side with PEAK's existing RPCs; the MasterClient does not need BuddyClimb installed.
+- Restored `PlayerInventoryPatch` as a completion hook for the native MasterClient inventory broadcasts.
+
 ## 0.1.13
 
 - Rebuilt double-backpack transfer as a client-side swap: the old carried backpack is moved into the carrier slot and dropped with PEAK's vanilla slot-drop RPC, instead of requesting MasterClient-only actions or suppressing delayed inventory syncs.
